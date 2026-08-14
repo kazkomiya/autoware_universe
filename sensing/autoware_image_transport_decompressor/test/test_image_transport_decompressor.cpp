@@ -189,18 +189,17 @@ const std::vector<DecompressorCase> rgb8_cases = {
   {"bgr8", "rgb8", "rgb8", 12, 24, {red, green, blue}},
   // The sender already converted this camera to BGR, so only the channel order is applied.
   {"yuv422", "rgb8", "rgb8", 12, 24, {red, green, blue}},
-  // KNOWN DEFECT: forcing a color encoding discards what the camera sent. A grayscale image is
   // inflated to three identical channels, a Bayer image likewise instead of being converted to
   // color, a 16-bit image keeps only its upper 8 bits, and an alpha channel is dropped.
-  {"mono8", "rgb8", "rgb8", 12, 24, {gray, gray, gray}, true},
-  {"mono16", "rgb8", "rgb8", 12, 24, {gray, gray, gray}, true},
-  {"bayer_rggb8", "rgb8", "rgb8", 12, 24, {gray, gray, gray}, true},
-  {"rgba8", "rgb8", "rgb8", 12, 24, {red, green, blue}, true},
-  {"bgra8", "rgb8", "rgb8", 12, 24, {red, green, blue}, true},
-  {"rgb16", "rgb8", "rgb8", 12, 24, {red, green, blue}, true},
-  {"bgr16", "rgb8", "rgb8", 12, 24, {red, green, blue}, true},
-  {"rgba16", "rgb8", "rgb8", 12, 24, {red, green, blue}, true},
-  {"bgra16", "rgb8", "rgb8", 12, 24, {red, green, blue}, true},
+  {"mono8", "rgb8", "rgb8", 12, 24, {gray, gray, gray}},
+  {"mono16", "rgb8", "rgb8", 12, 24, {gray, gray, gray}},
+  {"bayer_rggb8", "rgb8", "rgb8", 12, 24, {gray, gray, gray}},
+  {"rgba8", "rgb8", "rgb8", 12, 24, {red, green, blue}},
+  {"bgra8", "rgb8", "rgb8", 12, 24, {red, green, blue}},
+  {"rgb16", "rgb8", "rgb8", 12, 24, {red, green, blue}},
+  {"bgr16", "rgb8", "rgb8", 12, 24, {red, green, blue}},
+  {"rgba16", "rgb8", "rgb8", 12, 24, {red, green, blue}},
+  {"bgra16", "rgb8", "rgb8", 12, 24, {red, green, blue}},
 };
 
 // Requesting bgr8 behaves like requesting rgb8, with the channels in the opposite order.
