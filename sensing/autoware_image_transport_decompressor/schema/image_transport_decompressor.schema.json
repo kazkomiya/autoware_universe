@@ -8,7 +8,8 @@
       "properties": {
         "encoding": {
           "type": "string",
-          "description": "The image encoding to use for the decompressed image",
+          "description": "The image encoding to use for the decompressed image. `rgb8` and `bgr8` reduce every image to 8 bits with three channels in that order. `default` keeps the bit depth, the channel count and the alpha channel of the compressed image.",
+          "enum": ["default", "rgb8", "bgr8"],
           "default": "default"
         }
       },

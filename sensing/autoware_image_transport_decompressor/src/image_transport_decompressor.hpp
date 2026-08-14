@@ -35,8 +35,8 @@ struct DecompressResult
   std::string message;
 };
 
-/// @brief Decompress @p compressed_image, copying its header into the result's image. "rgb8" and
-/// "bgr8" force that encoding; any other requested value keeps the encoding the format field names.
+/// @brief Decompress @p compressed_image. "rgb8"/"bgr8" force that encoding; otherwise the source
+/// encoding is kept if it fits the payload, else the payload's own encoding is substituted (WARN).
 DecompressResult decompress(
   const sensor_msgs::msg::CompressedImage & compressed_image,
   const std::string & requested_encoding);

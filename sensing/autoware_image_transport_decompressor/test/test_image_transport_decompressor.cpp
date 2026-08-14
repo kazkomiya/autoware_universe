@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Characterization test: it pins the message decompress() returns today for every combination of
-// source image encoding and requested encoding. Rows marked "KNOWN DEFECT" hand the consumer
-// something other than what the camera produced.
+// Pins the message decompress() returns for every combination of source image encoding and
+// requested encoding. Every combination now returns an encoding that describes its payload; rows
+// marked "KNOWN DEFECT" still hand the consumer something other than what the camera produced.
 
 #include "../src/image_transport_decompressor.hpp"
 
@@ -102,9 +102,6 @@ struct DecompressorCase
   uint32_t expected_step;
   size_t expected_data_size;
   std::vector<uint8_t> expected_first_pixel;
-  // Whether step and data size agree with expected_encoding. False means the message is malformed;
-  // true does not mean the pixels are the ones the camera produced.
-  bool expected_consistent;
 };
 
 // Bytes a pixel of the given encoding occupies, or 0 when the encoding is not one of the above.
@@ -163,38 +160,35 @@ std::vector<uint8_t> leading_bytes(const sensor_msgs::msg::Image & image, const 
     image.data.begin(), image.data.begin() + static_cast<std::ptrdiff_t>(count));
 }
 
-// The decoded image is always 8-bit with three channels, or four once an alpha channel is added,
-// while the returned encoding is the one the camera used. Only the 8-bit color cameras come out of
-// that unharmed.
+// Keeping the source encoding keeps the bit depth, the channel count and the alpha channel of the
+// compressed image. A 16-bit sample is scaled by 257, so each of its two bytes holds the 8-bit
+// value.
 const std::vector<DecompressorCase> default_cases = {
-  {"rgb8", "default", "rgb8", 12, 24, {red, green, blue}, true},
-  {"bgr8", "default", "bgr8", 12, 24, {blue, green, red}, true},
-  // KNOWN DEFECT: the alpha channel of the camera is dropped and replaced by 255.
-  {"rgba8", "default", "rgba8", 16, 32, {red, green, blue, 255}, true},
-  {"bgra8", "default", "bgra8", 16, 32, {blue, green, red, 255}, true},
-  // KNOWN DEFECT: a grayscale camera is returned under a grayscale encoding while the payload
-  // carries three channels.
-  {"mono8", "default", "mono8", 12, 24, {gray, gray, gray}, false},
-  {"mono16", "default", "mono16", 12, 24, {gray, gray, gray}, false},
-  // KNOWN DEFECT: a 16-bit camera is returned under a 16-bit encoding while the payload carries
-  // 8-bit samples.
-  {"rgb16", "default", "rgb16", 12, 24, {red, green, blue}, false},
-  {"bgr16", "default", "bgr16", 12, 24, {blue, green, red}, false},
-  {"rgba16", "default", "rgba16", 16, 32, {red, green, blue, 255}, false},
-  {"bgra16", "default", "bgra16", 16, 32, {blue, green, red, 255}, false},
-  // KNOWN DEFECT: an encoding that is neither grayscale nor RGB/BGR is returned unchanged while the
-  // payload carries three-channel BGR.
-  {"yuv422", "default", "yuv422", 12, 24, {blue, green, red}, false},
-  {"bayer_rggb8", "default", "bayer_rggb8", 12, 24, {gray, gray, gray}, false},
+  {"rgb8", "default", "rgb8", 12, 24, {red, green, blue}},
+  {"bgr8", "default", "bgr8", 12, 24, {blue, green, red}},
+  {"rgba8", "default", "rgba8", 16, 32, {red, green, blue, alpha}},
+  {"bgra8", "default", "bgra8", 16, 32, {blue, green, red, alpha}},
+  {"mono8", "default", "mono8", 4, 8, {gray}},
+  {"mono16", "default", "mono16", 8, 16, {gray, gray}},
+  {"rgb16", "default", "rgb16", 24, 48, {red, red, green, green, blue, blue}},
+  {"bgr16", "default", "bgr16", 24, 48, {blue, blue, green, green, red, red}},
+  {"rgba16", "default", "rgba16", 32, 64, {red, red, green, green, blue, blue, alpha, alpha}},
+  {"bgra16", "default", "bgra16", 32, 64, {blue, blue, green, green, red, red, alpha, alpha}},
+  // The sender converted the image to BGR before compressing it, so "yuv422" no longer describes
+  // the payload and the BGR-ordered encoding is returned instead.
+  {"yuv422", "default", "bgr8", 12, 24, {blue, green, red}},
+  // The Bayer pattern is one channel of 8 bits, exactly what "bayer_rggb8" describes, so it is
+  // returned unchanged.
+  {"bayer_rggb8", "default", "bayer_rggb8", 4, 8, {gray}},
 };
 
 // Requesting rgb8 makes every message consistent, but only a color camera comes through as it was
 // sent.
 const std::vector<DecompressorCase> rgb8_cases = {
-  {"rgb8", "rgb8", "rgb8", 12, 24, {red, green, blue}, true},
-  {"bgr8", "rgb8", "rgb8", 12, 24, {red, green, blue}, true},
+  {"rgb8", "rgb8", "rgb8", 12, 24, {red, green, blue}},
+  {"bgr8", "rgb8", "rgb8", 12, 24, {red, green, blue}},
   // The sender already converted this camera to BGR, so only the channel order is applied.
-  {"yuv422", "rgb8", "rgb8", 12, 24, {red, green, blue}, true},
+  {"yuv422", "rgb8", "rgb8", 12, 24, {red, green, blue}},
   // KNOWN DEFECT: forcing a color encoding discards what the camera sent. A grayscale image is
   // inflated to three identical channels, a Bayer image likewise instead of being converted to
   // color, a 16-bit image keeps only its upper 8 bits, and an alpha channel is dropped.
@@ -211,19 +205,19 @@ const std::vector<DecompressorCase> rgb8_cases = {
 
 // Requesting bgr8 behaves like requesting rgb8, with the channels in the opposite order.
 const std::vector<DecompressorCase> bgr8_cases = {
-  {"rgb8", "bgr8", "bgr8", 12, 24, {blue, green, red}, true},
-  {"bgr8", "bgr8", "bgr8", 12, 24, {blue, green, red}, true},
-  {"yuv422", "bgr8", "bgr8", 12, 24, {blue, green, red}, true},
+  {"rgb8", "bgr8", "bgr8", 12, 24, {blue, green, red}},
+  {"bgr8", "bgr8", "bgr8", 12, 24, {blue, green, red}},
+  {"yuv422", "bgr8", "bgr8", 12, 24, {blue, green, red}},
   // KNOWN DEFECT: as above, forcing a color encoding discards what the camera sent.
-  {"mono8", "bgr8", "bgr8", 12, 24, {gray, gray, gray}, true},
-  {"mono16", "bgr8", "bgr8", 12, 24, {gray, gray, gray}, true},
-  {"bayer_rggb8", "bgr8", "bgr8", 12, 24, {gray, gray, gray}, true},
-  {"rgba8", "bgr8", "bgr8", 12, 24, {blue, green, red}, true},
-  {"bgra8", "bgr8", "bgr8", 12, 24, {blue, green, red}, true},
-  {"rgb16", "bgr8", "bgr8", 12, 24, {blue, green, red}, true},
-  {"bgr16", "bgr8", "bgr8", 12, 24, {blue, green, red}, true},
-  {"rgba16", "bgr8", "bgr8", 12, 24, {blue, green, red}, true},
-  {"bgra16", "bgr8", "bgr8", 12, 24, {blue, green, red}, true},
+  {"mono8", "bgr8", "bgr8", 12, 24, {gray, gray, gray}},
+  {"mono16", "bgr8", "bgr8", 12, 24, {gray, gray, gray}},
+  {"bayer_rggb8", "bgr8", "bgr8", 12, 24, {gray, gray, gray}},
+  {"rgba8", "bgr8", "bgr8", 12, 24, {blue, green, red}},
+  {"bgra8", "bgr8", "bgr8", 12, 24, {blue, green, red}},
+  {"rgb16", "bgr8", "bgr8", 12, 24, {blue, green, red}},
+  {"bgr16", "bgr8", "bgr8", 12, 24, {blue, green, red}},
+  {"rgba16", "bgr8", "bgr8", 12, 24, {blue, green, red}},
+  {"bgra16", "bgr8", "bgr8", 12, 24, {blue, green, red}},
 };
 
 std::string case_name(const ::testing::TestParamInfo<DecompressorCase> & info)
@@ -259,16 +253,7 @@ TEST_P(ImageTransportDecompressorTest, ProducesExpectedImage)
   EXPECT_EQ(image.data.size(), test_case.expected_data_size);
   EXPECT_EQ(
     leading_bytes(image, test_case.expected_first_pixel.size()), test_case.expected_first_pixel);
-
-  if (test_case.expected_consistent) {
-    EXPECT_TRUE(is_consistent_with_encoding(image));
-  } else {
-    // KNOWN DEFECT: the returned image declares a pixel size that its payload does not have, so
-    // consumers cannot interpret it.
-    EXPECT_FALSE(is_consistent_with_encoding(image))
-      << "the returned image is now consistent with its encoding, so this expectation should be "
-         "replaced by EXPECT_TRUE";
-  }
+  EXPECT_TRUE(is_consistent_with_encoding(image));
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -285,9 +270,9 @@ class ImageTransportDecompressorEdgeCaseTest : public ::testing::Test
 {
 };
 
-// KNOWN DEFECT: when the format field does not name the encoding of the camera image, the
-// requested encoding is ignored.
-TEST_F(ImageTransportDecompressorEdgeCaseTest, IgnoresRequestedEncodingWithoutFormatSeparator)
+// A sender that does not name the encoding of the camera image still gets the requested encoding,
+// its payload being read in the BGR order the image codecs decode into.
+TEST_F(ImageTransportDecompressorEdgeCaseTest, AppliesRequestedEncodingWithoutFormatSeparator)
 {
   // Arrange
   const cv::Mat compressed(image_height, image_width, CV_8UC3, cv::Scalar(blue, green, red));
@@ -301,17 +286,28 @@ TEST_F(ImageTransportDecompressorEdgeCaseTest, IgnoresRequestedEncodingWithoutFo
 
   // Assert
   ASSERT_TRUE(result.image.has_value());
-  EXPECT_NE(result.image->encoding, "rgb8")
-    << "the requested encoding is now honoured, so this expectation should be replaced by "
-       "EXPECT_EQ(result.image->encoding, \"rgb8\")";
-  EXPECT_EQ(result.image->encoding, "bgr8");
-  EXPECT_EQ(leading_bytes(*result.image, 3), std::vector<uint8_t>({blue, green, red}));
+  EXPECT_EQ(result.image->encoding, "rgb8");
+  EXPECT_EQ(leading_bytes(*result.image, 3), std::vector<uint8_t>({red, green, blue}));
   EXPECT_TRUE(is_consistent_with_encoding(*result.image));
 }
 
-// Undecodable payloads are dropped silently: cv::imdecode returns an empty image without throwing,
-// so no error is reported either.
-TEST_F(ImageTransportDecompressorEdgeCaseTest, ReturnsNoImageForUndecodableData)
+// The sender converted the image before compressing it, so the encoding of the camera image no
+// longer describes the payload, and the substitution is reported.
+TEST_F(ImageTransportDecompressorEdgeCaseTest, ReportsAReplacedEncoding)
+{
+  // Act
+  const auto result = decompress(compressed_image_from_camera("yuv422"), "default");
+
+  // Assert
+  ASSERT_TRUE(result.image.has_value());
+  EXPECT_EQ(result.image->encoding, "bgr8");
+  EXPECT_TRUE(is_consistent_with_encoding(*result.image));
+  EXPECT_EQ(result.level, diagnostic_msgs::msg::DiagnosticStatus::WARN);
+  EXPECT_FALSE(result.message.empty());
+}
+
+// Undecodable payloads are dropped and reported as a warning.
+TEST_F(ImageTransportDecompressorEdgeCaseTest, ReportsAFailureForUndecodableData)
 {
   // Arrange
   sensor_msgs::msg::CompressedImage message;
@@ -324,25 +320,46 @@ TEST_F(ImageTransportDecompressorEdgeCaseTest, ReturnsNoImageForUndecodableData)
 
   // Assert
   EXPECT_FALSE(result.image.has_value());
-  EXPECT_EQ(result.level, diagnostic_msgs::msg::DiagnosticStatus::OK);
+  EXPECT_EQ(result.level, diagnostic_msgs::msg::DiagnosticStatus::WARN);
+  EXPECT_FALSE(result.message.empty());
 }
 
-// KNOWN DEFECT: cv_bridge rejects the 16-bit message, so every consumer using it fails per frame.
-TEST_F(ImageTransportDecompressorEdgeCaseTest, MalformedSixteenBitOutputIsRejectedByCvBridge)
+// A payload that the format field misnames, and that no BGR-ordered encoding can describe either,
+// is dropped and reported rather than returned under an encoding that does not fit it.
+TEST_F(ImageTransportDecompressorEdgeCaseTest, ReportsAnUnsupportedPayload)
+{
+  // Arrange
+  sensor_msgs::msg::CompressedImage message;
+  message.header.frame_id = "camera";
+  message.format = "mono8; tiff compressed ";
+  ASSERT_TRUE(
+    cv::imencode(
+      ".tiff", cv::Mat(image_height, image_width, CV_32FC1, cv::Scalar(1.5)), message.data));
+
+  // Act
+  const auto result = decompress(message, "default");
+
+  // Assert
+  EXPECT_FALSE(result.image.has_value());
+  EXPECT_EQ(result.level, diagnostic_msgs::msg::DiagnosticStatus::WARN);
+  EXPECT_FALSE(result.message.empty());
+}
+
+// A 16-bit image now describes its actual payload, so cv_bridge can read it back without throwing.
+TEST_F(ImageTransportDecompressorEdgeCaseTest, RoundTripsSixteenBitOutputThroughCvBridge)
 {
   // Act
   const auto result = decompress(compressed_image_from_camera("rgb16"), "default");
 
   // Assert
   ASSERT_TRUE(result.image.has_value());
-  EXPECT_FALSE(is_consistent_with_encoding(*result.image));
-  EXPECT_THROW(cv_bridge::toCvCopy(*result.image, "bgr8"), cv_bridge::Exception);
+  EXPECT_TRUE(is_consistent_with_encoding(*result.image));
+  EXPECT_NO_THROW(cv_bridge::toCvCopy(*result.image, "bgr16"));
 }
 
-// KNOWN DEFECT: cv_bridge accepts the grayscale message, because a step larger than one row is a
-// legal row padding, so the corruption is silent: the left third of every row is stretched by
-// three.
-TEST_F(ImageTransportDecompressorEdgeCaseTest, MalformedGrayscaleOutputIsSilentlyCorrupted)
+// A grayscale image is no longer padded with pixels from the color codec's decode, so cv_bridge
+// reads back exactly the source gradient.
+TEST_F(ImageTransportDecompressorEdgeCaseTest, RoundTripsGrayscaleOutputThroughCvBridge)
 {
   // Arrange
   constexpr int gradient_width = 12;
@@ -362,7 +379,7 @@ TEST_F(ImageTransportDecompressorEdgeCaseTest, MalformedGrayscaleOutputIsSilentl
 
   // Assert
   ASSERT_TRUE(result.image.has_value());
-  EXPECT_FALSE(is_consistent_with_encoding(*result.image));
+  EXPECT_TRUE(is_consistent_with_encoding(*result.image));
 
   cv_bridge::CvImagePtr received;
   ASSERT_NO_THROW(received = cv_bridge::toCvCopy(*result.image, "mono8"));
@@ -371,8 +388,5 @@ TEST_F(ImageTransportDecompressorEdgeCaseTest, MalformedGrayscaleOutputIsSilentl
     received->image.ptr<uint8_t>(0), received->image.ptr<uint8_t>(0) + gradient_width);
   const std::vector<uint8_t> source_row(
     source.ptr<uint8_t>(0), source.ptr<uint8_t>(0) + gradient_width);
-  EXPECT_NE(received_row, source_row)
-    << "the grayscale round trip is no longer corrupted, so this expectation should be replaced by "
-       "EXPECT_EQ";
-  EXPECT_EQ(received_row, std::vector<uint8_t>({0, 0, 0, 20, 20, 20, 40, 40, 40, 60, 60, 60}));
+  EXPECT_EQ(received_row, source_row);
 }
