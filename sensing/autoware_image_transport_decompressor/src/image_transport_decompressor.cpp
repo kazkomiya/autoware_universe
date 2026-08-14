@@ -59,11 +59,52 @@
 #include <cv_bridge/cv_bridge.h>
 #endif
 
+#include <stdexcept>
 #include <string>
 #include <utility>
 
 namespace autoware::image_preprocessor::image_transport_decompressor
 {
+
+namespace
+{
+// Whether @p encoding describes the channel count and the bit depth of @p image.
+bool describes(const std::string & encoding, const cv::Mat & image)
+{
+  try {
+    return sensor_msgs::image_encodings::numChannels(encoding) == image.channels() &&
+           sensor_msgs::image_encodings::bitDepth(encoding) ==
+             static_cast<int>(image.elemSize1()) * 8;
+  } catch (const std::runtime_error &) {
+    return false;
+  }
+}
+
+// Encoding that describes @p image in the BGR channel order the image codecs decode into, or ""
+// when none of mono8/16, bgr8/16 or bgra8/16 does.
+std::string payload_encoding(const cv::Mat & image)
+{
+  if (image.depth() != CV_8U && image.depth() != CV_16U) {
+    return "";
+  }
+  const bool is_16bit = image.depth() == CV_16U;
+  switch (image.channels()) {
+    case 1:
+      return is_16bit ? sensor_msgs::image_encodings::MONO16 : sensor_msgs::image_encodings::MONO8;
+    case 3:
+      return is_16bit ? sensor_msgs::image_encodings::BGR16 : sensor_msgs::image_encodings::BGR8;
+    case 4:
+      return is_16bit ? sensor_msgs::image_encodings::BGRA16 : sensor_msgs::image_encodings::BGRA8;
+    default:
+      return "";
+  }
+}
+
+bool has_bgr_order(const std::string & encoding)
+{
+  return encoding.rfind("bgr", 0) == 0;
+}
+}  // namespace
 
 DecompressResult decompress(
   const sensor_msgs::msg::CompressedImage & compressed_image,
@@ -74,72 +115,59 @@ DecompressResult decompress(
   cv_bridge::CvImage cv_image;
   cv_image.header = compressed_image.header;
 
+  const bool force_color = requested_encoding == "rgb8" || requested_encoding == "bgr8";
+
   try {
-    // cv::IMREAD_COLOR makes the decoded image 8-bit with three channels in BGR order, whatever
-    // the depth and the channel count of the compressed stream are.
-    cv_image.image = cv::imdecode(cv::Mat(compressed_image.data), cv::IMREAD_COLOR);
+    // A color read reduces every stream to an 8-bit 3-channel BGR image; otherwise the depth, the
+    // channels and the alpha are kept so the encoding can describe the payload.
+    cv_image.image = cv::imdecode(
+      cv::Mat(compressed_image.data), force_color ? cv::IMREAD_COLOR : cv::IMREAD_UNCHANGED);
     if (cv_image.image.empty()) {
+      result.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+      result.message =
+        "failed to decode a compressed image of format \"" + compressed_image.format + "\"";
       return result;
     }
 
     const size_t split_pos = compressed_image.format.find(';');
-    if (split_pos == std::string::npos) {
-      // Older versions of compressed_image_transport do not signal the encoding of the source
-      // image, and the requested encoding is not applied in that case.
-      cv_image.encoding = sensor_msgs::image_encodings::BGR8;
+    const std::string source_encoding =
+      split_pos == std::string::npos ? std::string() : compressed_image.format.substr(0, split_pos);
+
+    if (force_color) {
+      cv_image.encoding = requested_encoding;
+    } else if (describes(source_encoding, cv_image.image)) {
+      cv_image.encoding = source_encoding;
     } else {
-      if (requested_encoding == "rgb8" || requested_encoding == "bgr8") {
-        cv_image.encoding = requested_encoding;
-      } else {
-        // Any other value keeps the encoding of the source image.
-        cv_image.encoding = compressed_image.format.substr(0, split_pos);
+      // The sender converted the image before compressing it, so its own encoding no longer
+      // describes the payload.
+      cv_image.encoding = payload_encoding(cv_image.image);
+      if (cv_image.encoding.empty()) {
+        result.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+        result.message = "no image encoding describes a compressed image of format \"" +
+                         compressed_image.format + "\"";
+        return result;
       }
+      result.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+      result.message = (source_encoding.empty() ? "no encoding was given for the compressed "
+                                                  "image, publishing \""
+                                                : "\"" + source_encoding +
+                                                    "\" does not describe the compressed "
+                                                    "image, publishing \"") +
+                       cv_image.encoding + "\" instead";
+    }
 
-      if (sensor_msgs::image_encodings::isColor(cv_image.encoding)) {
-        // The sender converted the channels before compressing and named the result after the
-        // codec. Bring them into the order the returned encoding promises, and add an alpha
-        // channel when that encoding has one.
-        const bool compressed_bgr_image =
-          compressed_image.format.find("compressed bgr", split_pos) != std::string::npos;
+    // Channel order of the stream. An order the sender did not name is the BGR order the codecs
+    // decode into.
+    const bool compressed_bgr_order =
+      split_pos == std::string::npos ||
+      compressed_image.format.find("compressed bgr", split_pos) != std::string::npos;
 
-        if (compressed_bgr_image) {
-          if (
-            cv_image.encoding == sensor_msgs::image_encodings::RGB8 ||
-            cv_image.encoding == sensor_msgs::image_encodings::RGB16) {
-            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_BGR2RGB);
-          }
-
-          if (
-            cv_image.encoding == sensor_msgs::image_encodings::RGBA8 ||
-            cv_image.encoding == sensor_msgs::image_encodings::RGBA16) {
-            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_BGR2RGBA);
-          }
-
-          if (
-            cv_image.encoding == sensor_msgs::image_encodings::BGRA8 ||
-            cv_image.encoding == sensor_msgs::image_encodings::BGRA16) {
-            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_BGR2BGRA);
-          }
-        } else {
-          if (
-            cv_image.encoding == sensor_msgs::image_encodings::BGR8 ||
-            cv_image.encoding == sensor_msgs::image_encodings::BGR16) {
-            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_RGB2BGR);
-          }
-
-          if (
-            cv_image.encoding == sensor_msgs::image_encodings::BGRA8 ||
-            cv_image.encoding == sensor_msgs::image_encodings::BGRA16) {
-            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_RGB2BGRA);
-          }
-
-          if (
-            cv_image.encoding == sensor_msgs::image_encodings::RGBA8 ||
-            cv_image.encoding == sensor_msgs::image_encodings::RGBA16) {
-            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_RGB2RGBA);
-          }
-        }
-      }
+    const int channels = cv_image.image.channels();
+    if (
+      (channels == 3 || channels == 4) &&
+      compressed_bgr_order != has_bgr_order(cv_image.encoding)) {
+      cv::cvtColor(
+        cv_image.image, cv_image.image, channels == 3 ? cv::COLOR_BGR2RGB : cv::COLOR_BGRA2RGBA);
     }
   } catch (const cv::Exception & e) {
     result.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;

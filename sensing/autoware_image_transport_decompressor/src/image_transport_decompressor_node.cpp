@@ -37,8 +37,15 @@ void ImageTransportDecompressor::onCompressedImage(
   const sensor_msgs::msg::CompressedImage::ConstSharedPtr input_compressed_image_msg)
 {
   auto result = image_transport_decompressor::decompress(*input_compressed_image_msg, encoding_);
-  if (result.level == diagnostic_msgs::msg::DiagnosticStatus::ERROR) {
-    RCLCPP_ERROR(get_logger(), "%s", result.message.c_str());
+  switch (result.level) {
+    case diagnostic_msgs::msg::DiagnosticStatus::ERROR:
+      RCLCPP_ERROR(get_logger(), "%s", result.message.c_str());
+      break;
+    case diagnostic_msgs::msg::DiagnosticStatus::WARN:
+      RCLCPP_WARN(get_logger(), "%s", result.message.c_str());
+      break;
+    default:
+      break;
   }
   if (!result.image) {
     return;
