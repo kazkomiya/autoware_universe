@@ -48,8 +48,8 @@
 
 #include "image_transport_decompressor.hpp"
 
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include <sensor_msgs/image_encodings.hpp>
 
@@ -72,86 +72,71 @@ DecompressResult decompress(
   DecompressResult result;
 
   cv_bridge::CvImage cv_image;
-  // Copy message header
   cv_image.header = compressed_image.header;
 
-  // Decode color/mono image
   try {
+    // cv::IMREAD_COLOR makes the decoded image 8-bit with three channels in BGR order, whatever
+    // the depth and the channel count of the compressed stream are.
     cv_image.image = cv::imdecode(cv::Mat(compressed_image.data), cv::IMREAD_COLOR);
+    if (cv_image.image.empty()) {
+      return result;
+    }
 
-    // Assign image encoding string
     const size_t split_pos = compressed_image.format.find(';');
     if (split_pos == std::string::npos) {
-      // Older version of compressed_image_transport does not signal image format
-      switch (cv_image.image.channels()) {
-        case 1:
-          cv_image.encoding = sensor_msgs::image_encodings::MONO8;
-          break;
-        case 3:
-          cv_image.encoding = sensor_msgs::image_encodings::BGR8;
-          break;
-        default:
-          result.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
-          result.message =
-            "Unsupported number of channels: " + std::to_string(cv_image.image.channels());
-          break;
-      }
+      // Older versions of compressed_image_transport do not signal the encoding of the source
+      // image, and the requested encoding is not applied in that case.
+      cv_image.encoding = sensor_msgs::image_encodings::BGR8;
     } else {
-      std::string image_encoding;
-      if (requested_encoding == std::string("rgb8")) {
-        image_encoding = "rgb8";
-      } else if (requested_encoding == std::string("bgr8")) {
-        image_encoding = "bgr8";
+      if (requested_encoding == "rgb8" || requested_encoding == "bgr8") {
+        cv_image.encoding = requested_encoding;
       } else {
-        // default encoding
-        image_encoding = compressed_image.format.substr(0, split_pos);
+        // Any other value keeps the encoding of the source image.
+        cv_image.encoding = compressed_image.format.substr(0, split_pos);
       }
 
-      cv_image.encoding = image_encoding;
+      if (sensor_msgs::image_encodings::isColor(cv_image.encoding)) {
+        // The sender converted the channels before compressing and named the result after the
+        // codec. Bring them into the order the returned encoding promises, and add an alpha
+        // channel when that encoding has one.
+        const bool compressed_bgr_image =
+          compressed_image.format.find("compressed bgr", split_pos) != std::string::npos;
 
-      if (sensor_msgs::image_encodings::isColor(image_encoding)) {
-        std::string compressed_encoding = compressed_image.format.substr(split_pos);
-        bool compressed_bgr_image =
-          (compressed_encoding.find("compressed bgr") != std::string::npos);
-
-        // Revert color transformation
         if (compressed_bgr_image) {
-          // if necessary convert colors from bgr to rgb
           if (
-            (image_encoding == sensor_msgs::image_encodings::RGB8) ||
-            (image_encoding == sensor_msgs::image_encodings::RGB16)) {
-            cv::cvtColor(cv_image.image, cv_image.image, CV_BGR2RGB);
+            cv_image.encoding == sensor_msgs::image_encodings::RGB8 ||
+            cv_image.encoding == sensor_msgs::image_encodings::RGB16) {
+            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_BGR2RGB);
           }
 
           if (
-            (image_encoding == sensor_msgs::image_encodings::RGBA8) ||
-            (image_encoding == sensor_msgs::image_encodings::RGBA16)) {
-            cv::cvtColor(cv_image.image, cv_image.image, CV_BGR2RGBA);
+            cv_image.encoding == sensor_msgs::image_encodings::RGBA8 ||
+            cv_image.encoding == sensor_msgs::image_encodings::RGBA16) {
+            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_BGR2RGBA);
           }
 
           if (
-            (image_encoding == sensor_msgs::image_encodings::BGRA8) ||
-            (image_encoding == sensor_msgs::image_encodings::BGRA16)) {
-            cv::cvtColor(cv_image.image, cv_image.image, CV_BGR2BGRA);
+            cv_image.encoding == sensor_msgs::image_encodings::BGRA8 ||
+            cv_image.encoding == sensor_msgs::image_encodings::BGRA16) {
+            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_BGR2BGRA);
           }
         } else {
-          // if necessary convert colors from rgb to bgr
           if (
-            (image_encoding == sensor_msgs::image_encodings::BGR8) ||
-            (image_encoding == sensor_msgs::image_encodings::BGR16)) {
-            cv::cvtColor(cv_image.image, cv_image.image, CV_RGB2BGR);
+            cv_image.encoding == sensor_msgs::image_encodings::BGR8 ||
+            cv_image.encoding == sensor_msgs::image_encodings::BGR16) {
+            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_RGB2BGR);
           }
 
           if (
-            (image_encoding == sensor_msgs::image_encodings::BGRA8) ||
-            (image_encoding == sensor_msgs::image_encodings::BGRA16)) {
-            cv::cvtColor(cv_image.image, cv_image.image, CV_RGB2BGRA);
+            cv_image.encoding == sensor_msgs::image_encodings::BGRA8 ||
+            cv_image.encoding == sensor_msgs::image_encodings::BGRA16) {
+            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_RGB2BGRA);
           }
 
           if (
-            (image_encoding == sensor_msgs::image_encodings::RGBA8) ||
-            (image_encoding == sensor_msgs::image_encodings::RGBA16)) {
-            cv::cvtColor(cv_image.image, cv_image.image, CV_RGB2RGBA);
+            cv_image.encoding == sensor_msgs::image_encodings::RGBA8 ||
+            cv_image.encoding == sensor_msgs::image_encodings::RGBA16) {
+            cv::cvtColor(cv_image.image, cv_image.image, cv::COLOR_RGB2RGBA);
           }
         }
       }
@@ -159,9 +144,6 @@ DecompressResult decompress(
   } catch (const cv::Exception & e) {
     result.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
     result.message = e.what();
-  }
-
-  if ((cv_image.image.rows == 0) || (cv_image.image.cols == 0)) {
     return result;
   }
 
