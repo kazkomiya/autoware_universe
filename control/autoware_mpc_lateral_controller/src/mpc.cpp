@@ -403,7 +403,7 @@ void MPC::setReferenceTrajectory(
       !filt_vector(param.path_filter_moving_ave_num, mpc_traj_smoothed.y) ||
       !filt_vector(param.path_filter_moving_ave_num, mpc_traj_smoothed.yaw) ||
       !filt_vector(param.path_filter_moving_ave_num, mpc_traj_smoothed.vx)) {
-      RCLCPP_DEBUG(m_logger, "path callback: filtering error. stop filtering.");
+      AW_DEBUG(m_reporter, "path callback: filtering error. stop filtering.");
       mpc_traj_smoothed = mpc_traj_resampled;
     }
   }
@@ -447,7 +447,7 @@ void MPC::setReferenceTrajectory(
   mpc_traj_smoothed.push_back(last_point);
 
   if (!mpc_traj_smoothed.size()) {
-    RCLCPP_DEBUG(m_logger, "path callback: trajectory size is undesired.");
+    AW_DEBUG(m_reporter, "path callback: trajectory size is undesired.");
     return;
   }
 
@@ -617,10 +617,10 @@ VectorXd MPC::getInitialState(const MPCData & data)
     dlat = m_lpf_lateral_error.filter(dlat);
     dyaw = m_lpf_yaw_error.filter(dyaw);
     x0 << lat_err, dlat, yaw_err, dyaw;
-    RCLCPP_DEBUG(m_logger, "(before lpf) dot_lat_err = %f, dot_yaw_err = %f", dlat, dyaw);
-    RCLCPP_DEBUG(m_logger, "(after lpf) dot_lat_err = %f, dot_yaw_err = %f", dlat, dyaw);
+    AW_DEBUG(m_reporter, "(before lpf) dot_lat_err = {:f}, dot_yaw_err = {:f}", dlat, dyaw);
+    AW_DEBUG(m_reporter, "(after lpf) dot_lat_err = {:f}, dot_yaw_err = {:f}", dlat, dyaw);
   } else {
-    RCLCPP_ERROR(m_logger, "vehicle_model_type is undefined");
+    AW_ERROR(m_reporter, "vehicle_model_type is undefined");
   }
   return x0;
 }
@@ -648,7 +648,7 @@ tl::expected<VectorXd, std::string> MPC::updateStateForDelayCompensation(
       k = autoware::interpolation::lerp(traj.relative_time, traj.k, mpc_curr_time) * sign_vx;
       v = autoware::interpolation::lerp(traj.relative_time, traj.vx, mpc_curr_time);
     } catch (const std::exception & e) {
-      RCLCPP_ERROR(m_logger, "mpc resample failed at delay compensation, stop mpc: %s", e.what());
+      AW_ERROR(m_reporter, "mpc resample failed at delay compensation, stop mpc: {}", e.what());
       return tl::make_unexpected(std::string(e.what()));
     }
 
@@ -869,16 +869,16 @@ tl::expected<VectorXd, std::string> MPC::executeOptimization(
   const auto solve_result = m_qpsolver_ptr->solve(H, f.transpose(), A, lb, ub, lbA, ubA, Uex);
   auto t_end = std::chrono::system_clock::now();
   if (!solve_result.success) {
-    RCLCPP_WARN(m_logger, "%s", solve_result.warning_message.c_str());
+    AW_WARN(m_reporter, "{}", solve_result.warning_message);
     return tl::make_unexpected("qp solver error");
   }
   if (!solve_result.warning_message.empty()) {
-    RCLCPP_WARN_THROTTLE(m_logger, *m_clock, 1000, "%s", solve_result.warning_message.c_str());
+    AW_WARN_THROTTLE(m_reporter, 1.0, "{}", solve_result.warning_message);
   }
 
   {
     auto t = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
-    RCLCPP_DEBUG(m_logger, "qp solver calculation time = %ld [ms]", t);
+    AW_DEBUG(m_reporter, "qp solver calculation time = {} [ms]", t);
   }
 
   if (Uex.array().isNaN().any()) {

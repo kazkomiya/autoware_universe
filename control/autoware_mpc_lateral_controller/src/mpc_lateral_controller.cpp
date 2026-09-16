@@ -40,7 +40,9 @@ namespace autoware::motion::control::mpc_lateral_controller
 
 MpcLateralController::MpcLateralController(
   rclcpp::Node & node, std::shared_ptr<diagnostic_updater::Updater> diag_updater)
-: clock_(node.get_clock()), logger_(node.get_logger().get_child("lateral_controller"))
+: clock_(node.get_clock()),
+  logger_(node.get_logger().get_child("lateral_controller")),
+  reporter_(logger_, clock_)
 {
   const auto dp_int = [&](const std::string & s) { return node.declare_parameter<int>(s); };
   const auto dp_bool = [&](const std::string & s) { return node.declare_parameter<bool>(s); };
@@ -186,7 +188,7 @@ MpcLateralController::MpcLateralController(
 
   m_mpc->initializeSteeringPredictor();
 
-  m_mpc->setLogger(logger_);
+  m_mpc->setReporter(reporter_);
   m_mpc->setClock(clock_);
 
   setupDiag();
@@ -227,7 +229,7 @@ std::shared_ptr<VehicleModelInterface> MpcLateralController::createVehicleModel(
     return vehicle_model_ptr;
   }
 
-  RCLCPP_ERROR(logger_, "vehicle_model_type is undefined");
+  AW_ERROR(&reporter_, "vehicle_model_type is undefined");
   return vehicle_model_ptr;
 }
 
@@ -248,7 +250,7 @@ std::shared_ptr<QPSolverInterface> MpcLateralController::createQPSolverInterface
     return qpsolver_ptr;
   }
 
-  RCLCPP_ERROR(logger_, "qp_solver_type is undefined");
+  AW_ERROR(&reporter_, "qp_solver_type is undefined");
   return qpsolver_ptr;
 }
 
@@ -310,7 +312,7 @@ trajectory_follower::LateralOutput MpcLateralController::run(
   if (
     (m_mpc_solved_status.result == true && mpc_solved_status.result == false) ||
     (!mpc_solved_status.result && mpc_solved_status.reason != m_mpc_solved_status.reason)) {
-    RCLCPP_ERROR(logger_, "MPC failed due to %s", mpc_solved_status.reason.c_str());
+    AW_ERROR(&reporter_, "MPC failed due to {}", mpc_solved_status.reason);
   }
   m_mpc_solved_status = mpc_solved_status;  // for diagnostic updater
 
@@ -351,7 +353,7 @@ trajectory_follower::LateralOutput MpcLateralController::run(
 
   if (isStoppedState()) {
     // Reset input buffer
-    debug_throttle("Stopped state detected, use previous control command");
+    AW_DEBUG_THROTTLE(&reporter_, 5.0, "Stopped state detected, use previous control command");
     for (auto & value : m_mpc->m_input_buffer) {
       value = m_ctrl_cmd_prev.steering_tire_angle;
     }
@@ -361,7 +363,7 @@ trajectory_follower::LateralOutput MpcLateralController::run(
   }
 
   if (!mpc_solved_status.result) {
-    debug_throttle("MPC is not solved, use stop control command");
+    AW_DEBUG_THROTTLE(&reporter_, 5.0, "MPC is not solved, use stop control command");
     ctrl_cmd = getStopControlCommand();
   }
 
@@ -375,7 +377,7 @@ bool MpcLateralController::isSteerConverged(const Lateral & cmd) const
   // wait for a while to propagate the trajectory shape to the output command when the trajectory
   // shape is changed.
   if (!m_has_received_first_trajectory || isTrajectoryShapeChanged()) {
-    RCLCPP_DEBUG(logger_, "trajectory shaped is changed");
+    AW_DEBUG(&reporter_, "trajectory shaped is changed");
     return false;
   }
 
@@ -393,15 +395,15 @@ bool MpcLateralController::isReady(const trajectory_follower::InputData & input_
   m_current_steering = input_data.current_steering;
 
   if (!m_mpc->hasVehicleModel()) {
-    info_throttle("MPC does not have a vehicle model");
+    AW_INFO_THROTTLE(&reporter_, 5.0, "MPC does not have a vehicle model");
     return false;
   }
   if (!m_mpc->hasQPSolver()) {
-    info_throttle("MPC does not have a QP solver");
+    AW_INFO_THROTTLE(&reporter_, 5.0, "MPC does not have a QP solver");
     return false;
   }
   if (m_mpc->m_reference_trajectory.empty()) {
-    info_throttle("trajectory size is zero.");
+    AW_INFO_THROTTLE(&reporter_, 5.0, "trajectory size is zero.");
     return false;
   }
 
@@ -414,12 +416,12 @@ void MpcLateralController::setTrajectory(
   m_current_trajectory = msg;
 
   if (msg.points.size() < 3) {
-    RCLCPP_DEBUG(logger_, "received path size is < 3, not enough.");
+    AW_DEBUG(&reporter_, "received path size is < 3, not enough.");
     return;
   }
 
   if (!isValidTrajectory(msg)) {
-    RCLCPP_ERROR(logger_, "Trajectory is invalid!! stop computing.");
+    AW_ERROR(&reporter_, "Trajectory is invalid!! stop computing.");
     return;
   }
 
@@ -469,7 +471,7 @@ bool MpcLateralController::isStoppedState() const
 
   const auto latest_published_cmd = m_ctrl_cmd_prev;  // use prev_cmd as a latest published command
   if (m_keep_steer_control_until_converged && !isSteerConverged(latest_published_cmd)) {
-    debug_throttle("steering is not converged.");
+    AW_DEBUG_THROTTLE(&reporter_, 5.0, "steering is not converged.");
     return false;  // not stopState: keep control
   }
 

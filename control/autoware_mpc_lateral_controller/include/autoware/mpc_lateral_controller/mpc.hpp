@@ -15,6 +15,7 @@
 #ifndef AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_HPP_
 #define AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_HPP_
 
+#include "autoware/mpc_lateral_controller/controller_reporter.hpp"
 #include "autoware/mpc_lateral_controller/lowpass_filter.hpp"
 #include "autoware/mpc_lateral_controller/mpc_trajectory.hpp"
 #include "autoware/mpc_lateral_controller/qp_solver/qp_solver_interface.hpp"
@@ -242,7 +243,8 @@ struct MpcResult
 class MPC
 {
 private:
-  rclcpp::Logger m_logger = rclcpp::get_logger("mpc_logger");  // ROS logger used for debug logging.
+  NullReporter m_null_reporter;                             // Used until a reporter is set.
+  const ControllerReporter * m_reporter{&m_null_reporter};  // Where the control reports.
   rclcpp::Clock::SharedPtr m_clock = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);  // ROS clock.
 
   // Vehicle model used for MPC.
@@ -452,18 +454,16 @@ private:
     const MPCTrajectory & trajectory, const double current_velocity) const;
 
   //!< @brief logging with warn and return false
-  template <typename... Args>
-  inline bool fail_warn_throttle(Args &&... args) const
+  inline bool fail_warn_throttle(const std::string & message) const
   {
-    RCLCPP_WARN_THROTTLE(m_logger, *m_clock, 3000, "%s", args...);
+    AW_WARN_THROTTLE(m_reporter, 3.0, "{}", message);
     return false;
   }
 
   //!< @brief logging with warn
-  template <typename... Args>
-  inline void warn_throttle(Args &&... args) const
+  inline void warn_throttle(const std::string & message) const
   {
-    RCLCPP_WARN_THROTTLE(m_logger, *m_clock, 3000, "%s", args...);
+    AW_WARN_THROTTLE(m_reporter, 3.0, "{}", message);
   }
 
 public:
@@ -576,10 +576,10 @@ public:
   inline bool hasQPSolver() const { return m_qpsolver_ptr != nullptr; }
 
   /**
-   * @brief Set the RCLCPP logger to be used for logging.
-   * @param logger The RCLCPP logger object.
+   * @brief Set where the control reports what it meets.
+   * @param reporter The reporter. It has to outlive this object.
    */
-  inline void setLogger(rclcpp::Logger logger) { m_logger = logger; }
+  inline void setReporter(const ControllerReporter & reporter) { m_reporter = &reporter; }
 
   /**
    * @brief Set the RCLCPP clock to be used for time keeping.
