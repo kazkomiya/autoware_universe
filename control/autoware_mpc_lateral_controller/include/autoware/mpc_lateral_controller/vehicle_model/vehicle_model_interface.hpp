@@ -15,6 +15,7 @@
 #ifndef AUTOWARE__MPC_LATERAL_CONTROLLER__VEHICLE_MODEL__VEHICLE_MODEL_INTERFACE_HPP_
 #define AUTOWARE__MPC_LATERAL_CONTROLLER__VEHICLE_MODEL__VEHICLE_MODEL_INTERFACE_HPP_
 
+#include "autoware/mpc_lateral_controller/controller_reporter.hpp"
 #include "autoware/mpc_lateral_controller/mpc_trajectory.hpp"
 
 #include <Eigen/Core>
@@ -31,10 +32,12 @@ namespace autoware::motion::control::mpc_lateral_controller
 class VehicleModelInterface
 {
 protected:
-  const int m_dim_x;   //!< @brief dimension of state x
-  const int m_dim_u;   //!< @brief dimension of input u
-  const int m_dim_y;   //!< @brief dimension of output y
-  double m_velocity;   //!< @brief vehicle velocity [m/s]
+  NullReporter m_null_reporter;                             //!< @brief used until one is set
+  const ControllerReporter * m_reporter{&m_null_reporter};  //!< @brief where the model reports
+  const int m_dim_x;                                        //!< @brief dimension of state x
+  const int m_dim_u;                                        //!< @brief dimension of input u
+  const int m_dim_y;                                        //!< @brief dimension of output y
+  double m_velocity;                                        //!< @brief vehicle velocity [m/s]
   double m_curvature;  //!< @brief curvature on the linearized point on path
   double m_wheelbase;  //!< @brief wheelbase of the vehicle [m]
 
@@ -147,6 +150,12 @@ public:
     const Eigen::MatrixXd & a_d, const Eigen::MatrixXd & b_d, const Eigen::MatrixXd & c_d,
     const Eigen::MatrixXd & w_d, const Eigen::MatrixXd & x0, const Eigen::MatrixXd & Uex,
     const MPCTrajectory & reference_trajectory, const double dt) const = 0;
+
+  /**
+   * @brief Set where the model reports what it meets.
+   * @param reporter The reporter. It has to outlive this object.
+   */
+  void setReporter(const ControllerReporter & reporter) { m_reporter = &reporter; }
 };
 }  // namespace autoware::motion::control::mpc_lateral_controller
 #endif  // AUTOWARE__MPC_LATERAL_CONTROLLER__VEHICLE_MODEL__VEHICLE_MODEL_INTERFACE_HPP_

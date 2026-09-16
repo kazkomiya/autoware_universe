@@ -93,8 +93,8 @@ MPCTrajectory DynamicsBicycleModel::calculatePredictedTrajectoryInWorldCoordinat
   const Eigen::MatrixXd & x0, const Eigen::MatrixXd & Uex,
   const MPCTrajectory & reference_trajectory, [[maybe_unused]] const double dt) const
 {
-  RCLCPP_ERROR(
-    rclcpp::get_logger("control.trajectory_follower.lateral_controller"),
+  AW_ERROR(
+    m_reporter,
     "Predicted trajectory calculation in world coordinate is not supported in dynamic model. "
     "Calculate in the Frenet coordinate instead.");
   return calculatePredictedTrajectoryInFrenetCoordinate(
