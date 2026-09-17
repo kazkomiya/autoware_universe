@@ -530,7 +530,9 @@ public:
   inline void setVehicleModel(std::shared_ptr<VehicleModelInterface> vehicle_model_ptr)
   {
     m_vehicle_model_ptr = vehicle_model_ptr;
-    m_vehicle_model_ptr->setReporter(*m_reporter);
+    if (m_vehicle_model_ptr) {
+      m_vehicle_model_ptr->setReporter(*m_reporter);
+    }
   }
 
   /**
