@@ -245,7 +245,6 @@ class MPC
 private:
   NullReporter m_null_reporter;                             // Used until a reporter is set.
   const ControllerReporter * m_reporter{&m_null_reporter};  // Where the control reports.
-  rclcpp::Clock::SharedPtr m_clock = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);  // ROS clock.
 
   // Vehicle model used for MPC.
   std::shared_ptr<VehicleModelInterface> m_vehicle_model_ptr;
@@ -274,11 +273,12 @@ private:
    * @param trajectory The reference trajectory.
    * @param current_steer The current steering report.
    * @param current_kinematics The current vehicle kinematics.
+   * @param stamp The time of this control cycle.
    * @return The MPC data on success, or the failure reason on error.
    */
   tl::expected<MPCData, std::string> getData(
     const MPCTrajectory & trajectory, const SteeringReport & current_steer,
-    const Odometry & current_kinematics);
+    const Odometry & current_kinematics, const rclcpp::Time & stamp);
 
   /**
    * @brief Get the initial state for MPC.
@@ -587,12 +587,6 @@ public:
       m_vehicle_model_ptr->setReporter(reporter);
     }
   }
-
-  /**
-   * @brief Set the RCLCPP clock to be used for time keeping.
-   * @param clock The shared pointer to the RCLCPP clock.
-   */
-  inline void setClock(rclcpp::Clock::SharedPtr clock) { m_clock = clock; }
 };  // class MPC
 }  // namespace autoware::motion::control::mpc_lateral_controller
 
