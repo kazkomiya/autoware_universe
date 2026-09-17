@@ -27,6 +27,7 @@
 namespace
 {
 namespace MPCUtils = autoware::motion::control::mpc_lateral_controller::MPCUtils;
+using autoware::motion::control::mpc_lateral_controller::NullReporter;
 using autoware_planning_msgs::msg::Trajectory;
 using autoware_planning_msgs::msg::TrajectoryPoint;
 
@@ -104,9 +105,10 @@ TEST(TestMPC, CalcNearestPoseInterpUsesTimeWindowCandidates)
   double nearest_time = 0.0;
   constexpr double max_dist = 10.0;
   constexpr double max_yaw = M_PI;
+  const NullReporter reporter;
   const bool ok = MPCUtils::calcNearestPoseInterp(
-    traj, self_pose, &nearest_pose, &nearest_index, &nearest_time, max_dist, max_yaw, true, 1.8,
-    2.2);
+    reporter, traj, self_pose, &nearest_pose, &nearest_index, &nearest_time, max_dist, max_yaw,
+    true, 1.8, 2.2);
 
   ASSERT_TRUE(ok);
   EXPECT_GE(nearest_time, 1.8);
@@ -134,9 +136,10 @@ TEST(TestMPC, CalcNearestPoseInterpFallsBackWhenTimeWindowHasNoCandidates)
   double nearest_time = 0.0;
   constexpr double max_dist = 10.0;
   constexpr double max_yaw = M_PI;
+  const NullReporter reporter;
   const bool ok = MPCUtils::calcNearestPoseInterp(
-    traj, self_pose, &nearest_pose, &nearest_index, &nearest_time, max_dist, max_yaw, true, 10.0,
-    11.0);
+    reporter, traj, self_pose, &nearest_pose, &nearest_index, &nearest_time, max_dist, max_yaw,
+    true, 10.0, 11.0);
 
   ASSERT_TRUE(ok);
   EXPECT_NEAR(nearest_pose.position.x, 0.2, 1e-6);
@@ -153,7 +156,7 @@ TEST(TestMPC, TemporalYawAndCurvatureStayStableForShortSegments)
   traj.push_back(0.02, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0, 0.2);
   traj.push_back(1.0, 0.0, 0.0, 0.3, 1.0, 0.0, 0.0, 0.3);
 
-  MPCUtils::calcTrajectoryYawFromXY(traj, true, true);
+  MPCUtils::calcTrajectoryYawFromXY(NullReporter{}, traj, true, true);
   MPCUtils::calcTrajectoryCurvature(1, 1, traj, true);
 
   EXPECT_NEAR(traj.yaw.at(0), 0.3, 1e-6);

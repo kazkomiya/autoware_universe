@@ -214,13 +214,14 @@ bool linearInterpMPCTrajectory(
 }
 
 void calcTrajectoryYawFromXY(
-  MPCTrajectory & traj, const bool is_forward_shift, const bool use_input_yaw_for_short_segment)
+  const ControllerReporter & reporter, MPCTrajectory & traj, const bool is_forward_shift,
+  const bool use_input_yaw_for_short_segment)
 {
   if (traj.yaw.size() < 3) {  // at least 3 points are required to calculate yaw
     return;
   }
   if (traj.yaw.size() != traj.vx.size()) {
-    RCLCPP_ERROR(rclcpp::get_logger("mpc_utils"), "trajectory size has no consistency.");
+    AW_ERROR(&reporter, "trajectory size has no consistency.");
     return;
   }
 
@@ -535,9 +536,10 @@ void dynamicSmoothingVelocity(
 }
 
 bool calcNearestPoseInterp(
-  const MPCTrajectory & traj, const Pose & self_pose, Pose * nearest_pose, size_t * nearest_index,
-  double * nearest_time, const double max_dist, const double max_yaw, const bool use_time_window,
-  const double min_time_window_sec, const double max_time_window_sec)
+  const ControllerReporter & reporter, const MPCTrajectory & traj, const Pose & self_pose,
+  Pose * nearest_pose, size_t * nearest_index, double * nearest_time, const double max_dist,
+  const double max_yaw, const bool use_time_window, const double min_time_window_sec,
+  const double max_time_window_sec)
 {
   if (traj.empty() || !nearest_pose || !nearest_index || !nearest_time) {
     return false;
@@ -545,9 +547,7 @@ bool calcNearestPoseInterp(
 
   const auto autoware_traj = convertToAutowareTrajectory(traj);
   if (autoware_traj.points.empty()) {
-    const auto logger = rclcpp::get_logger("mpc_util");
-    auto clock = rclcpp::Clock(RCL_ROS_TIME);
-    RCLCPP_WARN_THROTTLE(logger, clock, 5000, "[calcNearestPoseInterp] input trajectory is empty");
+    AW_WARN_THROTTLE(&reporter, 5.0, "[calcNearestPoseInterp] input trajectory is empty");
     return false;
   }
 

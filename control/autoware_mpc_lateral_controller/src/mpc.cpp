@@ -258,7 +258,7 @@ MpcResult MPC::calculateMPC(
     mpc_matrix, x0_delayed, Uex, u_filtered, current_steer.steering_tire_angle, prediction_dt));
 
   // save the control command for the steering prediction
-  m_steering_predictor->storeSteerCmd(u_filtered);
+  m_steering_predictor->storeSteerCmd(u_filtered, m_clock->now());
 
   // save input to buffer for delay compensation
   m_input_buffer.push_back(ctrl_cmd.steering_tire_angle);
@@ -423,7 +423,7 @@ void MPC::setReferenceTrajectory(
   // calculate yaw angle
   const bool use_input_yaw_for_short_segment = m_use_temporal_trajectory;
   MPCUtils::calcTrajectoryYawFromXY(
-    mpc_traj_smoothed, m_is_forward_shift, use_input_yaw_for_short_segment);
+    *m_reporter, mpc_traj_smoothed, m_is_forward_shift, use_input_yaw_for_short_segment);
   MPCUtils::convertEulerAngleToMonotonic(mpc_traj_smoothed.yaw);
 
   // calculate curvature
@@ -490,8 +490,8 @@ tl::expected<MPCData, std::string> MPC::getData(
     m_prev_nearest_time = data.nearest_time;
   } else {
     if (!MPCUtils::calcNearestPoseInterp(
-          traj, current_pose, &(data.nearest_pose), &(data.nearest_idx), &(data.nearest_time),
-          ego_nearest_dist_threshold, ego_nearest_yaw_threshold)) {
+          *m_reporter, traj, current_pose, &(data.nearest_pose), &(data.nearest_idx),
+          &(data.nearest_time), ego_nearest_dist_threshold, ego_nearest_yaw_threshold)) {
       return tl::make_unexpected("error in calculating nearest pose");
     }
     m_prev_nearest_time.reset();
@@ -504,7 +504,7 @@ tl::expected<MPCData, std::string> MPC::getData(
     tf2::getYaw(current_pose.orientation) - tf2::getYaw(data.nearest_pose.orientation));
 
   // get predicted steer
-  data.predicted_steer = m_steering_predictor->calcSteerPrediction();
+  data.predicted_steer = m_steering_predictor->calcSteerPrediction(m_clock->now());
 
   if (m_publish_debug_trajectories) {
     const auto autoware_traj = MPCUtils::convertToAutowareTrajectory(traj);

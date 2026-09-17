@@ -15,6 +15,7 @@
 #ifndef AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_UTILS_HPP_
 #define AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_UTILS_HPP_
 
+#include "autoware/mpc_lateral_controller/controller_reporter.hpp"
 #include "autoware/mpc_lateral_controller/mpc_trajectory.hpp"
 #include "rclcpp/rclcpp.hpp"
 
@@ -149,7 +150,7 @@ void dynamicSmoothingVelocity(
  * segments
  */
 void calcTrajectoryYawFromXY(
-  MPCTrajectory & traj, const bool is_forward_shift,
+  const ControllerReporter & reporter, MPCTrajectory & traj, const bool is_forward_shift,
   const bool use_input_yaw_for_short_segment = false);
 
 /**
@@ -205,9 +206,9 @@ void calcTrajectoryCurvatureBySpatialResample(
  * @return false when nearest pose couldn't find for some reasons
  */
 bool calcNearestPoseInterp(
-  const MPCTrajectory & traj, const Pose & self_pose, Pose * nearest_pose, size_t * nearest_index,
-  double * nearest_time, const double max_dist, const double max_yaw,
-  const bool use_time_window = false,
+  const ControllerReporter & reporter, const MPCTrajectory & traj, const Pose & self_pose,
+  Pose * nearest_pose, size_t * nearest_index, double * nearest_time, const double max_dist,
+  const double max_yaw, const bool use_time_window = false,
   const double min_time_window_sec = -std::numeric_limits<double>::infinity(),
   const double max_time_window_sec = std::numeric_limits<double>::infinity());
 

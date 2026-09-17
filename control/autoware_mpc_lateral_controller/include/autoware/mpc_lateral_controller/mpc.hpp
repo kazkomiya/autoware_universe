@@ -530,6 +530,7 @@ public:
   inline void setVehicleModel(std::shared_ptr<VehicleModelInterface> vehicle_model_ptr)
   {
     m_vehicle_model_ptr = vehicle_model_ptr;
+    m_vehicle_model_ptr->setReporter(*m_reporter);
   }
 
   /**
@@ -579,7 +580,13 @@ public:
    * @brief Set where the control reports what it meets.
    * @param reporter The reporter. It has to outlive this object.
    */
-  inline void setReporter(const ControllerReporter & reporter) { m_reporter = &reporter; }
+  inline void setReporter(const ControllerReporter & reporter)
+  {
+    m_reporter = &reporter;
+    if (m_vehicle_model_ptr) {
+      m_vehicle_model_ptr->setReporter(reporter);
+    }
+  }
 
   /**
    * @brief Set the RCLCPP clock to be used for time keeping.
