@@ -15,6 +15,7 @@
 #ifndef AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_LATERAL_CONTROLLER_HPP_
 #define AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_LATERAL_CONTROLLER_HPP_
 
+#include "autoware/mpc_lateral_controller/controller_reporter.hpp"
 #include "autoware/mpc_lateral_controller/lowpass_filter.hpp"
 #include "autoware/mpc_lateral_controller/mpc.hpp"
 #include "autoware/mpc_lateral_controller/mpc_trajectory.hpp"
@@ -66,6 +67,29 @@ public:
 private:
   rclcpp::Clock::SharedPtr clock_;
   rclcpp::Logger logger_;
+
+  /// Writes what the control says to the logger of the node. A message waits as long as
+  /// the call that made it asked for; the wait is kept for each MessageId of its own.
+  class LoggingReporter : public ControllerReporter
+  {
+  public:
+    LoggingReporter(rclcpp::Logger logger, rclcpp::Clock::SharedPtr clock)
+    : logger_(std::move(logger)), clock_(std::move(clock))
+    {
+    }
+
+  protected:
+    void report(Level level, MessageId id, Repeat repeat, std::string text) const override;
+
+  private:
+    rclcpp::Logger logger_;
+    rclcpp::Clock::SharedPtr clock_;
+    /// When each message was written last, in seconds of the clock of the node. Zero
+    /// stands for a message not written yet, as the logging macros of rclcpp use.
+    mutable std::array<double, static_cast<size_t>(MessageId::count)> last_sent_s_{};
+  };
+
+  LoggingReporter reporter_;
 
   rclcpp::Publisher<Trajectory>::SharedPtr m_pub_predicted_traj;
   rclcpp::Publisher<Trajectory>::SharedPtr m_pub_predicted_traj_frenet;
@@ -302,24 +326,6 @@ private:
    */
   rcl_interfaces::msg::SetParametersResult paramCallback(
     const std::vector<rclcpp::Parameter> & parameters);
-
-  template <typename... Args>
-  inline void info_throttle(Args &&... args) const
-  {
-    RCLCPP_INFO_THROTTLE(logger_, *clock_, 5000, "%s", args...);
-  }
-
-  template <typename... Args>
-  inline void debug_throttle(Args &&... args) const
-  {
-    RCLCPP_DEBUG_THROTTLE(logger_, *clock_, 5000, "%s", args...);
-  }
-
-  template <typename... Args>
-  inline void warn_throttle(Args &&... args) const
-  {
-    RCLCPP_WARN_THROTTLE(logger_, *clock_, 5000, "%s", args...);
-  }
 };
 }  // namespace autoware::motion::control::mpc_lateral_controller
 

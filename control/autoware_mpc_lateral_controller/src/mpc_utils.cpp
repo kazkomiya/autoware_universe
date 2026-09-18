@@ -214,13 +214,14 @@ bool linearInterpMPCTrajectory(
 }
 
 void calcTrajectoryYawFromXY(
-  MPCTrajectory & traj, const bool is_forward_shift, const bool use_input_yaw_for_short_segment)
+  const ControllerReporter & reporter, MPCTrajectory & traj, const bool is_forward_shift,
+  const bool use_input_yaw_for_short_segment)
 {
   if (traj.yaw.size() < 3) {  // at least 3 points are required to calculate yaw
     return;
   }
   if (traj.yaw.size() != traj.vx.size()) {
-    RCLCPP_ERROR(rclcpp::get_logger("mpc_utils"), "trajectory size has no consistency.");
+    reporter.error(MessageId::trajectory_size_inconsistent, "trajectory size has no consistency.");
     return;
   }
 
