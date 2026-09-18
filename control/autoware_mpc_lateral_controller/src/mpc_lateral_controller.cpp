@@ -186,7 +186,6 @@ MpcLateralController::MpcLateralController(
 
   m_mpc->initializeSteeringPredictor();
 
-  m_mpc->setLogger(logger_);
   m_mpc->setClock(clock_);
 
   setupDiag();
@@ -252,6 +251,48 @@ std::shared_ptr<QPSolverInterface> MpcLateralController::createQPSolverInterface
   return qpsolver_ptr;
 }
 
+void MpcLateralController::writeMessages(const std::vector<Message> & messages) const
+{
+  for (const auto & message : messages) {
+    switch (message.id) {
+      case MessageId::spline_resample_failed:
+        RCLCPP_WARN_THROTTLE(
+          logger_, *clock_, 3000,
+          "[setReferenceTrajectory] spline error when resampling by distance");
+        break;
+      case MessageId::qp_solver_warning:
+        RCLCPP_WARN_THROTTLE(logger_, *clock_, 1000, "%s", message.detail.c_str());
+        break;
+      case MessageId::qp_solver_failed:
+        RCLCPP_WARN(logger_, "%s", message.detail.c_str());
+        break;
+      case MessageId::path_filter_failed:
+        RCLCPP_DEBUG(logger_, "path callback: filtering error. stop filtering.");
+        break;
+      case MessageId::resampled_trajectory_empty:
+        RCLCPP_DEBUG(logger_, "path callback: trajectory size is undesired.");
+        break;
+      case MessageId::state_vehicle_model_undefined:
+        RCLCPP_ERROR(logger_, "vehicle_model_type is undefined");
+        break;
+      case MessageId::delay_compensation_resample_failed:
+        RCLCPP_ERROR(
+          logger_, "mpc resample failed at delay compensation, stop mpc: %s",
+          message.detail.c_str());
+        break;
+      case MessageId::trajectory_size_inconsistent:
+        RCLCPP_ERROR(logger_, "trajectory size has no consistency.");
+        break;
+      case MessageId::world_coordinate_prediction_unsupported:
+        RCLCPP_ERROR(
+          logger_,
+          "Predicted trajectory calculation in world coordinate is not supported in dynamic model. "
+          "Calculate in the Frenet coordinate instead.");
+        break;
+    }
+  }
+}
+
 void MpcLateralController::setStatus(diagnostic_updater::DiagnosticStatusWrapper & stat)
 {
   if (m_mpc_solved_status.result) {
@@ -305,6 +346,7 @@ trajectory_follower::LateralOutput MpcLateralController::run(
 
   auto mpc_solved_status =
     m_mpc->calculateMPC(m_current_steering, m_current_kinematic_state, stamp);
+  writeMessages(m_mpc->takeMessages());
   Lateral ctrl_cmd = mpc_solved_status.ctrl_cmd;
 
   if (
@@ -424,6 +466,7 @@ void MpcLateralController::setTrajectory(
   }
 
   m_mpc->setReferenceTrajectory(msg, m_trajectory_filtering_param, current_kinematics);
+  writeMessages(m_mpc->takeMessages());
 
   // update trajectory buffer to check the trajectory shape change.
   m_trajectory_buffer.push_back(m_current_trajectory);
