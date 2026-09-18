@@ -254,7 +254,6 @@ private:
 
   // Wall time the latest call of the solver took [ms].
   double m_qp_solve_time_ms = 0.0;
-  rclcpp::Clock::SharedPtr m_clock = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);  // ROS clock.
 
   // Vehicle model used for MPC.
   std::shared_ptr<VehicleModelInterface> m_vehicle_model_ptr;
@@ -287,7 +286,7 @@ private:
    */
   tl::expected<MPCData, std::string> getData(
     const MPCTrajectory & trajectory, const SteeringReport & current_steer,
-    const Odometry & current_kinematics);
+    const Odometry & current_kinematics, const rclcpp::Time & stamp);
 
   /**
    * @brief Get the initial state for MPC.
@@ -585,12 +584,6 @@ public:
    * @return The messages, in the order they were made.
    */
   inline std::vector<Message> takeMessages() { return std::exchange(m_messages, {}); }
-
-  /**
-   * @brief Set the RCLCPP clock to be used for time keeping.
-   * @param clock The shared pointer to the RCLCPP clock.
-   */
-  inline void setClock(rclcpp::Clock::SharedPtr clock) { m_clock = clock; }
 };  // class MPC
 }  // namespace autoware::motion::control::mpc_lateral_controller
 
