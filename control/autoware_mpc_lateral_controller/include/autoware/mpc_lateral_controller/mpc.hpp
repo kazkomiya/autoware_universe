@@ -15,6 +15,7 @@
 #ifndef AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_HPP_
 #define AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_HPP_
 
+#include "autoware/mpc_lateral_controller/controller_message.hpp"
 #include "autoware/mpc_lateral_controller/lowpass_filter.hpp"
 #include "autoware/mpc_lateral_controller/mpc_trajectory.hpp"
 #include "autoware/mpc_lateral_controller/qp_solver/qp_solver_interface.hpp"
@@ -242,7 +243,17 @@ struct MpcResult
 class MPC
 {
 private:
-  rclcpp::Logger m_logger = rclcpp::get_logger("mpc_logger");  // ROS logger used for debug logging.
+  // What the control has to say. The caller takes it after each call.
+  mutable std::vector<Message> m_messages;
+
+  // Error derivatives of the latest cycle, published as debug values.
+  double m_dlat_before_lpf = 0.0;
+  double m_dyaw_before_lpf = 0.0;
+  double m_dlat = 0.0;
+  double m_dyaw = 0.0;
+
+  // Wall time the latest call of the solver took [ms].
+  double m_qp_solve_time_ms = 0.0;
   rclcpp::Clock::SharedPtr m_clock = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);  // ROS clock.
 
   // Vehicle model used for MPC.
@@ -451,19 +462,10 @@ private:
   VectorXd calcSteerRateLimitOnTrajectory(
     const MPCTrajectory & trajectory, const double current_velocity) const;
 
-  //!< @brief logging with warn and return false
-  template <typename... Args>
-  inline bool fail_warn_throttle(Args &&... args) const
+  //!< @brief keep what the control has to say until the caller takes it
+  inline void outputMessage(const MessageId id, std::string text) const
   {
-    RCLCPP_WARN_THROTTLE(m_logger, *m_clock, 3000, "%s", args...);
-    return false;
-  }
-
-  //!< @brief logging with warn
-  template <typename... Args>
-  inline void warn_throttle(Args &&... args) const
-  {
-    RCLCPP_WARN_THROTTLE(m_logger, *m_clock, 3000, "%s", args...);
+    m_messages.push_back({id, std::move(text)});
   }
 
 public:
@@ -576,10 +578,10 @@ public:
   inline bool hasQPSolver() const { return m_qpsolver_ptr != nullptr; }
 
   /**
-   * @brief Set the RCLCPP logger to be used for logging.
-   * @param logger The RCLCPP logger object.
+   * @brief Take what the control had to say since the last call of this function.
+   * @return The messages, in the order they were made.
    */
-  inline void setLogger(rclcpp::Logger logger) { m_logger = logger; }
+  inline std::vector<Message> takeMessages() { return std::exchange(m_messages, {}); }
 
   /**
    * @brief Set the RCLCPP clock to be used for time keeping.

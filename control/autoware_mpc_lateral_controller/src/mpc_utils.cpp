@@ -220,7 +220,6 @@ void calcTrajectoryYawFromXY(
     return;
   }
   if (traj.yaw.size() != traj.vx.size()) {
-    RCLCPP_ERROR(rclcpp::get_logger("mpc_utils"), "trajectory size has no consistency.");
     return;
   }
 

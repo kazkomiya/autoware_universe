@@ -352,6 +352,11 @@ Float32MultiArrayStamped MPC::generateDiagData(
   append_diag(mpc_data.temporal_observation_used ? 1.0 : 0.0);  // [24] observation used
   append_diag(mpc_data.temporal_window_min);                    // [25] temporal window min
   append_diag(mpc_data.temporal_window_max);                    // [26] temporal window max
+  append_diag(m_dlat_before_lpf);   // [27] lateral error derivative before the low pass filter
+  append_diag(m_dyaw_before_lpf);   // [28] yaw error derivative before the low pass filter
+  append_diag(m_dlat);              // [29] lateral error derivative
+  append_diag(m_dyaw);              // [30] yaw error derivative
+  append_diag(m_qp_solve_time_ms);  // [31] wall time the solver call took [ms]
 
   return diagnostic;
 }
@@ -380,7 +385,9 @@ void MPC::setReferenceTrajectory(
     const auto [success_resample, resampled] = MPCUtils::resampleMPCTrajectoryByDistance(
       mpc_traj_raw, param.traj_resample_dist, nearest_seg_idx, ego_offset_to_segment);
     if (!success_resample) {
-      warn_throttle("[setReferenceTrajectory] spline error when resampling by distance");
+      outputMessage(
+        MessageId::spline_resample_failed,
+        "[setReferenceTrajectory] spline error when resampling by distance");
       return;
     }
     mpc_traj_resampled = resampled;
@@ -403,7 +410,8 @@ void MPC::setReferenceTrajectory(
       !filt_vector(param.path_filter_moving_ave_num, mpc_traj_smoothed.y) ||
       !filt_vector(param.path_filter_moving_ave_num, mpc_traj_smoothed.yaw) ||
       !filt_vector(param.path_filter_moving_ave_num, mpc_traj_smoothed.vx)) {
-      RCLCPP_DEBUG(m_logger, "path callback: filtering error. stop filtering.");
+      outputMessage(
+        MessageId::path_filter_failed, "path callback: filtering error. stop filtering.");
       mpc_traj_smoothed = mpc_traj_resampled;
     }
   }
@@ -422,6 +430,9 @@ void MPC::setReferenceTrajectory(
 
   // calculate yaw angle
   const bool use_input_yaw_for_short_segment = m_use_temporal_trajectory;
+  if (mpc_traj_smoothed.yaw.size() != mpc_traj_smoothed.vx.size()) {
+    outputMessage(MessageId::trajectory_size_inconsistent, "trajectory size has no consistency.");
+  }
   MPCUtils::calcTrajectoryYawFromXY(
     mpc_traj_smoothed, m_is_forward_shift, use_input_yaw_for_short_segment);
   MPCUtils::convertEulerAngleToMonotonic(mpc_traj_smoothed.yaw);
@@ -609,13 +620,15 @@ VectorXd MPC::getInitialState(const MPCData & data)
     double dyaw = (yaw_err - m_yaw_error_prev) / m_ctrl_period;
     m_lateral_error_prev = lat_err;
     m_yaw_error_prev = yaw_err;
+    m_dlat_before_lpf = dlat;
+    m_dyaw_before_lpf = dyaw;
     dlat = m_lpf_lateral_error.filter(dlat);
     dyaw = m_lpf_yaw_error.filter(dyaw);
+    m_dlat = dlat;
+    m_dyaw = dyaw;
     x0 << lat_err, dlat, yaw_err, dyaw;
-    RCLCPP_DEBUG(m_logger, "(before lpf) dot_lat_err = %f, dot_yaw_err = %f", dlat, dyaw);
-    RCLCPP_DEBUG(m_logger, "(after lpf) dot_lat_err = %f, dot_yaw_err = %f", dlat, dyaw);
   } else {
-    RCLCPP_ERROR(m_logger, "vehicle_model_type is undefined");
+    outputMessage(MessageId::state_vehicle_model_undefined, "vehicle_model_type is undefined");
   }
   return x0;
 }
@@ -643,7 +656,9 @@ tl::expected<VectorXd, std::string> MPC::updateStateForDelayCompensation(
       k = autoware::interpolation::lerp(traj.relative_time, traj.k, mpc_curr_time) * sign_vx;
       v = autoware::interpolation::lerp(traj.relative_time, traj.vx, mpc_curr_time);
     } catch (const std::exception & e) {
-      RCLCPP_ERROR(m_logger, "mpc resample failed at delay compensation, stop mpc: %s", e.what());
+      outputMessage(
+        MessageId::delay_compensation_resample_failed,
+        fmt::format("mpc resample failed at delay compensation, stop mpc: {}", e.what()));
       return tl::make_unexpected(std::string(e.what()));
     }
 
@@ -864,17 +879,15 @@ tl::expected<VectorXd, std::string> MPC::executeOptimization(
   const auto solve_result = m_qpsolver_ptr->solve(H, f.transpose(), A, lb, ub, lbA, ubA, Uex);
   auto t_end = std::chrono::system_clock::now();
   if (!solve_result.success) {
-    RCLCPP_WARN(m_logger, "%s", solve_result.warning_message.c_str());
+    outputMessage(MessageId::qp_solver_failed, solve_result.warning_message);
     return tl::make_unexpected("qp solver error");
   }
   if (!solve_result.warning_message.empty()) {
-    RCLCPP_WARN_THROTTLE(m_logger, *m_clock, 1000, "%s", solve_result.warning_message.c_str());
+    outputMessage(MessageId::qp_solver_warning, solve_result.warning_message);
   }
 
-  {
-    auto t = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
-    RCLCPP_DEBUG(m_logger, "qp solver calculation time = %ld [ms]", t);
-  }
+  m_qp_solve_time_ms = static_cast<double>(
+    std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count());
 
   if (Uex.array().isNaN().any()) {
     return tl::make_unexpected("model Uex including NaN");
@@ -1092,6 +1105,12 @@ Trajectory MPC::calculatePredictedTrajectory(
   MPCTrajectory predicted_mpc_trajectory;
 
   if (coordinate == "world") {
+    if (m_vehicle_model_ptr->modelName() == "dynamics") {
+      outputMessage(
+        MessageId::world_coordinate_prediction_unsupported,
+        "Predicted trajectory calculation in world coordinate is not supported in dynamic model. "
+        "Calculate in the Frenet coordinate instead.");
+    }
     predicted_mpc_trajectory = m_vehicle_model_ptr->calculatePredictedTrajectoryInWorldCoordinate(
       mpc_matrix.Aex, mpc_matrix.Bex, mpc_matrix.Cex, mpc_matrix.Wex, x0, Uex, reference_trajectory,
       dt);
