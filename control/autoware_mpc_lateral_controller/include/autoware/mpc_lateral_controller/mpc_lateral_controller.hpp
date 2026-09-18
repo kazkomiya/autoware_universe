@@ -15,6 +15,7 @@
 #ifndef AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_LATERAL_CONTROLLER_HPP_
 #define AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_LATERAL_CONTROLLER_HPP_
 
+#include "autoware/mpc_lateral_controller/controller_message.hpp"
 #include "autoware/mpc_lateral_controller/lowpass_filter.hpp"
 #include "autoware/mpc_lateral_controller/mpc.hpp"
 #include "autoware/mpc_lateral_controller/mpc_trajectory.hpp"
@@ -302,6 +303,10 @@ private:
    */
   rcl_interfaces::msg::SetParametersResult paramCallback(
     const std::vector<rclcpp::Parameter> & parameters);
+
+  /// Write what the control had to say. Each message stands in its own place in the code,
+  /// so each keeps the waiting time of its own message.
+  void writeMessages(const std::vector<Message> & messages) const;
 
   template <typename... Args>
   inline void info_throttle(Args &&... args) const
