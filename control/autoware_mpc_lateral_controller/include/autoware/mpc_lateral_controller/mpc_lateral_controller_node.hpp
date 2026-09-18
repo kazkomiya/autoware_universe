@@ -57,7 +57,137 @@ using trajectory_follower::LateralHorizon;
 class MpcLateralControllerNode
 {
 public:
+  /// \param node Reference to the node used only for the component and parameter initialization.
+  explicit MpcLateralControllerNode(
+    rclcpp::Node & node, std::shared_ptr<diagnostic_updater::Updater> diag_updater);
+  virtual ~MpcLateralControllerNode();
+
+  void set_steering_offset(double offset) override { m_steering_offset_ = offset; }
+
 private:
+  rclcpp::Clock::SharedPtr clock_;
+  rclcpp::Logger logger_;
+
+  rclcpp::Publisher<Trajectory>::SharedPtr m_pub_predicted_traj;
+  rclcpp::Publisher<Trajectory>::SharedPtr m_pub_predicted_traj_frenet;
+  rclcpp::Publisher<Trajectory>::SharedPtr m_pub_resampled_reference_traj;
+  rclcpp::Publisher<PoseStamped>::SharedPtr m_pub_nearest_pose;
+  rclcpp::Publisher<Trajectory>::SharedPtr m_pub_nearest_segment_traj;
+  rclcpp::Publisher<Float32MultiArrayStamped>::SharedPtr m_pub_nearest_info;
+  rclcpp::Publisher<Float32MultiArrayStamped>::SharedPtr m_pub_debug_values;
+  rclcpp::Publisher<Float32Stamped>::SharedPtr m_pub_steer_offset;
+
+
+  std::shared_ptr<diagnostic_updater::Updater>
+    diag_updater_{};  // Diagnostic updater for publishing diagnostic data.
+
+
+
+
+
+
+
+
+
+
+
+  void setStatus(diagnostic_updater::DiagnosticStatusWrapper & stat);
+
+  void setupDiag();
+
+
+
+
+  void setSteeringToHistory(const Lateral & steering);
+
+
+
+
+
+
+
+
+
+
+
+
+
+   * @brief Initialize the timer
+   * @param period_s Control period in seconds.
+  void initTimer(double period_s);
+
+   * @brief Create the vehicle model based on the provided parameters.
+   * @param wheelbase Vehicle's wheelbase.
+   * @param steer_lim Steering command limit.
+   * @param steer_tau Steering time constant.
+   * @param node Reference to the node.
+   * @return Pointer to the created vehicle model.
+  std::shared_ptr<VehicleModelInterface> createVehicleModel(
+    const double wheelbase, const double steer_lim, const double steer_tau, rclcpp::Node & node);
+
+   * @brief Create the quadratic problem solver interface.
+   * @param node Reference to the node.
+   * @return Pointer to the created QP solver interface.
+  std::shared_ptr<QPSolverInterface> createQPSolverInterface(rclcpp::Node & node);
+
+  bool isReady(const trajectory_follower::InputData & input_data) override;
+
+  trajectory_follower::LateralOutput run(
+    trajectory_follower::InputData const & input_data) override;
+
+
+
+
+
+   * @brief Publish the predicted future trajectory.
+   * @param predicted_traj Predicted future trajectory to be published.
+  void publishPredictedTraj(Trajectory & predicted_traj) const;
+
+   * @brief Publish the MPC debug topic messages (predicted trajectory in Frenet coordinate,
+   * resampled reference trajectory, nearest pose, nearest segment trajectory, nearest info).
+   * @param debug_msgs MPC debug topic messages to be published.
+  void publishDebugMessages(std::optional<MpcDebugTopicMessage> & debug_msgs) const;
+
+   * @brief Publish diagnostic message.
+   * @param diagnostic Diagnostic message to be published.
+  void publishDebugValues(Float32MultiArrayStamped & diagnostic) const;
+
+
+
+
+
+
+
+  rclcpp::Node::OnSetParametersCallbackHandle::SharedPtr m_set_param_res;
+
+   * @brief Declare MPC parameters as ROS parameters to allow tuning on the fly.
+   * @param node Reference to the node.
+  void declareMPCparameters(rclcpp::Node & node);
+
+   * @brief Callback function called when parameters are changed outside of the node.
+   * @param parameters Vector of changed parameters.
+   * @return Result of the parameter callback.
+  rcl_interfaces::msg::SetParametersResult paramCallback(
+    const std::vector<rclcpp::Parameter> & parameters);
+
+  /// Write what the control had to say. Each message stands in its own place in the code,
+  /// so each keeps the waiting time of its own message.
+  void writeMessages(const std::vector<Message> & messages) const;
+
+  template <typename... Args>
+  inline void info_throttle(Args &&... args) const
+  {
+    RCLCPP_INFO_THROTTLE(logger_, *clock_, 5000, "%s", args...);
+
+  template <typename... Args>
+  inline void debug_throttle(Args &&... args) const
+  {
+    RCLCPP_DEBUG_THROTTLE(logger_, *clock_, 5000, "%s", args...);
+
+  template <typename... Args>
+  inline void warn_throttle(Args &&... args) const
+  {
+    RCLCPP_WARN_THROTTLE(logger_, *clock_, 5000, "%s", args...);
 };
 }  // namespace autoware::motion::control::mpc_lateral_controller
 
