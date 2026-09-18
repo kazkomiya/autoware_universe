@@ -103,7 +103,7 @@ public:
 
   std::string modelName() override { return "dynamics"; };
 
-  MPCTrajectory calculatePredictedTrajectoryInWorldCoordinate(
+  WithEvents<MPCTrajectory> calculatePredictedTrajectoryInWorldCoordinate(
     const Eigen::MatrixXd & a_d, const Eigen::MatrixXd & b_d, const Eigen::MatrixXd & c_d,
     const Eigen::MatrixXd & w_d, const Eigen::MatrixXd & x0, const Eigen::MatrixXd & Uex,
     const MPCTrajectory & reference_trajectory, const double dt) const override;

@@ -15,6 +15,7 @@
 #ifndef AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_HPP_
 #define AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_HPP_
 
+#include "autoware/mpc_lateral_controller/controller_event.hpp"
 #include "autoware/mpc_lateral_controller/lowpass_filter.hpp"
 #include "autoware/mpc_lateral_controller/mpc_trajectory.hpp"
 #include "autoware/mpc_lateral_controller/qp_solver/qp_solver_interface.hpp"
@@ -233,6 +234,9 @@ struct MpcResult
   Trajectory predicted_trajectory{};
   Float32MultiArrayStamped diagnostic{};
   std::optional<MpcDebugTopicMessage> debug_msgs{};
+
+  // What the control met while it ran.
+  Events events{};
 };
 
 /**
@@ -242,7 +246,6 @@ struct MpcResult
 class MPC
 {
 private:
-  rclcpp::Logger m_logger = rclcpp::get_logger("mpc_logger");  // ROS logger used for debug logging.
   rclcpp::Clock::SharedPtr m_clock = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);  // ROS clock.
 
   // Vehicle model used for MPC.
@@ -260,8 +263,17 @@ private:
   Butterworth2dFilter m_lpf_yaw_error;      // Low-pass filter for smoothing the heading error.
 
   double m_raw_steer_cmd_pprev = 0.0;  // Raw output computed two iterations ago.
-  double m_lateral_error_prev = 0.0;   // Previous lateral error for derivative calculation.
-  double m_yaw_error_prev = 0.0;       // Previous heading error for derivative calculation.
+  // Error derivatives of the latest cycle, published as debug values.
+  double m_dlat_before_lpf = 0.0;
+  double m_dyaw_before_lpf = 0.0;
+  double m_dlat = 0.0;
+  double m_dyaw = 0.0;
+
+  // Wall time the latest call of the solver took [ms].
+  double m_qp_solve_time_ms = 0.0;
+
+  double m_lateral_error_prev = 0.0;  // Previous lateral error for derivative calculation.
+  double m_yaw_error_prev = 0.0;      // Previous heading error for derivative calculation.
 
   bool m_is_forward_shift = true;  // Flag indicating if the shift is in the forward direction.
   std::optional<double> m_prev_nearest_time{};    // Stabilized nearest trajectory time.
@@ -274,7 +286,7 @@ private:
    * @param current_kinematics The current vehicle kinematics.
    * @return The MPC data on success, or the failure reason on error.
    */
-  tl::expected<MPCData, std::string> getData(
+  Outcome<MPCData> getData(
     const MPCTrajectory & trajectory, const SteeringReport & current_steer,
     const Odometry & current_kinematics);
 
@@ -283,7 +295,7 @@ private:
    * @param data The MPC data.
    * @return The initial state as a vector.
    */
-  VectorXd getInitialState(const MPCData & data);
+  WithEvents<VectorXd> getInitialState(const MPCData & data);
 
   /**
    * @brief Update the state for delay compensation.
@@ -292,7 +304,7 @@ private:
    * @param x0_orig The original initial state vector.
    * @return The updated state at delayed_time on success, or the failure reason on error.
    */
-  tl::expected<VectorXd, std::string> updateStateForDelayCompensation(
+  Outcome<VectorXd> updateStateForDelayCompensation(
     const MPCTrajectory & traj, const double & start_time, const VectorXd & x0_orig);
 
   /**
@@ -314,7 +326,7 @@ private:
    * @param [in] current_velocity current ego velocity
    * @return The optimized input vector on success, or the failure reason on error.
    */
-  tl::expected<VectorXd, std::string> executeOptimization(
+  Outcome<VectorXd> executeOptimization(
     const MPCMatrix & mpc_matrix, const VectorXd & x0, const double prediction_dt,
     const MPCTrajectory & trajectory, const double current_velocity);
 
@@ -390,7 +402,7 @@ private:
    * "world")
    * @return predicted path
    */
-  Trajectory calculatePredictedTrajectory(
+  WithEvents<Trajectory> calculatePredictedTrajectory(
     const MPCMatrix & mpc_matrix, const Eigen::MatrixXd & x0, const Eigen::MatrixXd & Uex,
     const MPCTrajectory & reference_trajectory, const double dt,
     const std::string & coordinate = "world") const;
@@ -451,21 +463,6 @@ private:
   VectorXd calcSteerRateLimitOnTrajectory(
     const MPCTrajectory & trajectory, const double current_velocity) const;
 
-  //!< @brief logging with warn and return false
-  template <typename... Args>
-  inline bool fail_warn_throttle(Args &&... args) const
-  {
-    RCLCPP_WARN_THROTTLE(m_logger, *m_clock, 3000, "%s", args...);
-    return false;
-  }
-
-  //!< @brief logging with warn
-  template <typename... Args>
-  inline void warn_throttle(Args &&... args) const
-  {
-    RCLCPP_WARN_THROTTLE(m_logger, *m_clock, 3000, "%s", args...);
-  }
-
 public:
   MPCTrajectory m_reference_trajectory;  // Reference trajectory to be followed.
   MPCParam m_param;                      // MPC design parameters.
@@ -513,7 +510,7 @@ public:
    * @param trajectory_msg The reference trajectory message.
    * @param param Trajectory filtering parameters.
    */
-  void setReferenceTrajectory(
+  Events setReferenceTrajectory(
     const Trajectory & trajectory_msg, const TrajectoryFilteringParam & param,
     const Odometry & current_kinematics);
 
@@ -574,12 +571,6 @@ public:
    * @return True if the QP solver is set, false otherwise.
    */
   inline bool hasQPSolver() const { return m_qpsolver_ptr != nullptr; }
-
-  /**
-   * @brief Set the RCLCPP logger to be used for logging.
-   * @param logger The RCLCPP logger object.
-   */
-  inline void setLogger(rclcpp::Logger logger) { m_logger = logger; }
 
   /**
    * @brief Set the RCLCPP clock to be used for time keeping.

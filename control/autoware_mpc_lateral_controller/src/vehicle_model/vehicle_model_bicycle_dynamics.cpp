@@ -15,6 +15,7 @@
 #include "autoware/mpc_lateral_controller/vehicle_model/vehicle_model_bicycle_dynamics.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace autoware::motion::control::mpc_lateral_controller
 {
@@ -87,18 +88,21 @@ void DynamicsBicycleModel::calculateReferenceInput(Eigen::MatrixXd & u_ref)
   u_ref(0, 0) = m_wheelbase * m_curvature + Kv * vel * vel * m_curvature;
 }
 
-MPCTrajectory DynamicsBicycleModel::calculatePredictedTrajectoryInWorldCoordinate(
+WithEvents<MPCTrajectory> DynamicsBicycleModel::calculatePredictedTrajectoryInWorldCoordinate(
   const Eigen::MatrixXd & a_d, const Eigen::MatrixXd & b_d,
   [[maybe_unused]] const Eigen::MatrixXd & c_d, const Eigen::MatrixXd & w_d,
   const Eigen::MatrixXd & x0, const Eigen::MatrixXd & Uex,
   const MPCTrajectory & reference_trajectory, [[maybe_unused]] const double dt) const
 {
-  RCLCPP_ERROR(
-    rclcpp::get_logger("control.trajectory_follower.lateral_controller"),
+  Events events;
+  report(
+    events, EventId::world_coordinate_prediction_unsupported,
     "Predicted trajectory calculation in world coordinate is not supported in dynamic model. "
     "Calculate in the Frenet coordinate instead.");
-  return calculatePredictedTrajectoryInFrenetCoordinate(
-    a_d, b_d, c_d, w_d, x0, Uex, reference_trajectory, dt);
+  return {
+    calculatePredictedTrajectoryInFrenetCoordinate(
+      a_d, b_d, c_d, w_d, x0, Uex, reference_trajectory, dt),
+    std::move(events)};
 }
 
 MPCTrajectory DynamicsBicycleModel::calculatePredictedTrajectoryInFrenetCoordinate(

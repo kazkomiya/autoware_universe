@@ -213,15 +213,16 @@ bool linearInterpMPCTrajectory(
   return true;
 }
 
-void calcTrajectoryYawFromXY(
+Events calcTrajectoryYawFromXY(
   MPCTrajectory & traj, const bool is_forward_shift, const bool use_input_yaw_for_short_segment)
 {
+  Events events;
   if (traj.yaw.size() < 3) {  // at least 3 points are required to calculate yaw
-    return;
+    return events;
   }
   if (traj.yaw.size() != traj.vx.size()) {
-    RCLCPP_ERROR(rclcpp::get_logger("mpc_utils"), "trajectory size has no consistency.");
-    return;
+    report(events, EventId::trajectory_size_inconsistent, "trajectory size has no consistency.");
+    return events;
   }
 
   const auto input_yaw = traj.yaw;
@@ -275,6 +276,7 @@ void calcTrajectoryYawFromXY(
         use_input_yaw_for_short_segment ? input_yaw.at(last) : traj.yaw.at(last - 1);
     }
   }
+  return events;
 }
 
 void calcTrajectoryCurvature(
@@ -534,21 +536,22 @@ void dynamicSmoothingVelocity(
   // Temporal mode keeps timestamps and updates velocity using time delta.
 }
 
-bool calcNearestPoseInterp(
+WithEvents<bool> calcNearestPoseInterp(
   const MPCTrajectory & traj, const Pose & self_pose, Pose * nearest_pose, size_t * nearest_index,
   double * nearest_time, const double max_dist, const double max_yaw, const bool use_time_window,
   const double min_time_window_sec, const double max_time_window_sec)
 {
+  Events events;
   if (traj.empty() || !nearest_pose || !nearest_index || !nearest_time) {
-    return false;
+    return {false, std::move(events)};
   }
 
   const auto autoware_traj = convertToAutowareTrajectory(traj);
   if (autoware_traj.points.empty()) {
-    const auto logger = rclcpp::get_logger("mpc_util");
-    auto clock = rclcpp::Clock(RCL_ROS_TIME);
-    RCLCPP_WARN_THROTTLE(logger, clock, 5000, "[calcNearestPoseInterp] input trajectory is empty");
-    return false;
+    report(
+      events, EventId::nearest_pose_trajectory_empty,
+      "[calcNearestPoseInterp] input trajectory is empty");
+    return {false, std::move(events)};
   }
 
   *nearest_index = autoware::motion_utils::findFirstNearestIndexWithSoftConstraints(
@@ -596,7 +599,7 @@ bool calcNearestPoseInterp(
     nearest_pose->position.y = traj.y.at(*nearest_index);
     nearest_pose->orientation = create_quaternion_from_yaw(traj.yaw.at(*nearest_index));
     *nearest_time = traj.relative_time.at(*nearest_index);
-    return true;
+    return {true, std::move(events)};
   }
 
   /* get second nearest index = next to nearest_index */
@@ -636,7 +639,7 @@ bool calcNearestPoseInterp(
     nearest_pose->position.y = traj.y.at(*nearest_index);
     nearest_pose->orientation = create_quaternion_from_yaw(traj.yaw.at(*nearest_index));
     *nearest_time = traj.relative_time.at(*nearest_index);
-    return true;
+    return {true, std::move(events)};
   }
 
   /* linear interpolation */
@@ -649,7 +652,7 @@ bool calcNearestPoseInterp(
   const double nearest_yaw = normalize_radian(traj.yaw.at(next) + (1 - ratio) * tmp_yaw_err);
   nearest_pose->orientation = create_quaternion_from_yaw(nearest_yaw);
   *nearest_time = (1 - ratio) * traj.relative_time.at(prev) + ratio * traj.relative_time.at(next);
-  return true;
+  return {true, std::move(events)};
 }
 
 double calcStopDistance(const Trajectory & current_trajectory, const int origin)

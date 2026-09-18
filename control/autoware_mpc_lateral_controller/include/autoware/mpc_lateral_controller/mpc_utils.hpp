@@ -15,6 +15,7 @@
 #ifndef AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_UTILS_HPP_
 #define AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_UTILS_HPP_
 
+#include "autoware/mpc_lateral_controller/controller_event.hpp"
 #include "autoware/mpc_lateral_controller/mpc_trajectory.hpp"
 #include "rclcpp/rclcpp.hpp"
 
@@ -148,7 +149,7 @@ void dynamicSmoothingVelocity(
  * @param [in] use_input_yaw_for_short_segment if true, preserve input yaw for very short
  * segments
  */
-void calcTrajectoryYawFromXY(
+Events calcTrajectoryYawFromXY(
   MPCTrajectory & traj, const bool is_forward_shift,
   const bool use_input_yaw_for_short_segment = false);
 
@@ -204,7 +205,7 @@ void calcTrajectoryCurvatureBySpatialResample(
  * @param [in] max_time_window_sec upper bound of the time window [s]
  * @return false when nearest pose couldn't find for some reasons
  */
-bool calcNearestPoseInterp(
+WithEvents<bool> calcNearestPoseInterp(
   const MPCTrajectory & traj, const Pose & self_pose, Pose * nearest_pose, size_t * nearest_index,
   double * nearest_time, const double max_dist, const double max_yaw,
   const bool use_time_window = false,

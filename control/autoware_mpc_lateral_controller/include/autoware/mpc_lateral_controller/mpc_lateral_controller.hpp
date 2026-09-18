@@ -15,6 +15,7 @@
 #ifndef AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_LATERAL_CONTROLLER_HPP_
 #define AUTOWARE__MPC_LATERAL_CONTROLLER__MPC_LATERAL_CONTROLLER_HPP_
 
+#include "autoware/mpc_lateral_controller/controller_event.hpp"
 #include "autoware/mpc_lateral_controller/lowpass_filter.hpp"
 #include "autoware/mpc_lateral_controller/mpc.hpp"
 #include "autoware/mpc_lateral_controller/mpc_trajectory.hpp"
@@ -176,7 +177,7 @@ private:
    * @param node Reference to the node.
    * @return Pointer to the created vehicle model.
    */
-  std::shared_ptr<VehicleModelInterface> createVehicleModel(
+  WithEvents<std::shared_ptr<VehicleModelInterface>> createVehicleModel(
     const double wheelbase, const double steer_lim, const double steer_tau, rclcpp::Node & node);
 
   /**
@@ -184,7 +185,7 @@ private:
    * @param node Reference to the node.
    * @return Pointer to the created QP solver interface.
    */
-  std::shared_ptr<QPSolverInterface> createQPSolverInterface(rclcpp::Node & node);
+  WithEvents<std::shared_ptr<QPSolverInterface>> createQPSolverInterface(rclcpp::Node & node);
 
   /**
    * @brief Check if all necessary data is received and ready to run the control.
@@ -205,7 +206,7 @@ private:
    * @brief Set the current trajectory using the received message.
    * @param msg Received trajectory message.
    */
-  void setTrajectory(const Trajectory & msg, const Odometry & current_kinematics);
+  Events setTrajectory(const Trajectory & msg, const Odometry & current_kinematics);
 
   /**
    * @brief Check if the received data is valid.
@@ -265,7 +266,7 @@ private:
    * @brief Check if the ego car is in a stopped state.
    * @return True if the ego car is stopped, false otherwise.
    */
-  [[nodiscard]] bool isStoppedState() const;
+  [[nodiscard]] WithEvents<bool> isStoppedState() const;
 
   /**
    * @brief Check if the trajectory has a valid value.
@@ -285,7 +286,7 @@ private:
    * @param cmd Steering control command to be checked.
    * @return True if the steering control is converged and stable, false otherwise.
    */
-  [[nodiscard]] bool isSteerConverged(const Lateral & cmd) const;
+  [[nodiscard]] WithEvents<bool> isSteerConverged(const Lateral & cmd) const;
 
   rclcpp::Node::OnSetParametersCallbackHandle::SharedPtr m_set_param_res;
 
@@ -303,23 +304,9 @@ private:
   rcl_interfaces::msg::SetParametersResult paramCallback(
     const std::vector<rclcpp::Parameter> & parameters);
 
-  template <typename... Args>
-  inline void info_throttle(Args &&... args) const
-  {
-    RCLCPP_INFO_THROTTLE(logger_, *clock_, 5000, "%s", args...);
-  }
-
-  template <typename... Args>
-  inline void debug_throttle(Args &&... args) const
-  {
-    RCLCPP_DEBUG_THROTTLE(logger_, *clock_, 5000, "%s", args...);
-  }
-
-  template <typename... Args>
-  inline void warn_throttle(Args &&... args) const
-  {
-    RCLCPP_WARN_THROTTLE(logger_, *clock_, 5000, "%s", args...);
-  }
+  /// Write what the control met to the logger of the node. Each case keeps the waiting time
+  /// of its own message, because each stands in its own place in the code.
+  void writeEvents(const Events & events) const;
 };
 }  // namespace autoware::motion::control::mpc_lateral_controller
 

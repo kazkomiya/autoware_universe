@@ -27,6 +27,7 @@
 namespace
 {
 namespace MPCUtils = autoware::motion::control::mpc_lateral_controller::MPCUtils;
+using autoware::motion::control::mpc_lateral_controller::Events;
 using autoware_planning_msgs::msg::Trajectory;
 using autoware_planning_msgs::msg::TrajectoryPoint;
 
@@ -104,11 +105,11 @@ TEST(TestMPC, CalcNearestPoseInterpUsesTimeWindowCandidates)
   double nearest_time = 0.0;
   constexpr double max_dist = 10.0;
   constexpr double max_yaw = M_PI;
-  const bool ok = MPCUtils::calcNearestPoseInterp(
+  const auto ok = MPCUtils::calcNearestPoseInterp(
     traj, self_pose, &nearest_pose, &nearest_index, &nearest_time, max_dist, max_yaw, true, 1.8,
     2.2);
 
-  ASSERT_TRUE(ok);
+  ASSERT_TRUE(ok.value);
   EXPECT_GE(nearest_time, 1.8);
   EXPECT_LE(nearest_time, 2.2);
   EXPECT_NEAR(nearest_pose.position.x, 2.05, 1e-6);
@@ -134,11 +135,11 @@ TEST(TestMPC, CalcNearestPoseInterpFallsBackWhenTimeWindowHasNoCandidates)
   double nearest_time = 0.0;
   constexpr double max_dist = 10.0;
   constexpr double max_yaw = M_PI;
-  const bool ok = MPCUtils::calcNearestPoseInterp(
+  const auto ok = MPCUtils::calcNearestPoseInterp(
     traj, self_pose, &nearest_pose, &nearest_index, &nearest_time, max_dist, max_yaw, true, 10.0,
     11.0);
 
-  ASSERT_TRUE(ok);
+  ASSERT_TRUE(ok.value);
   EXPECT_NEAR(nearest_pose.position.x, 0.2, 1e-6);
   EXPECT_NEAR(nearest_time, 0.2, 1e-6);
 }

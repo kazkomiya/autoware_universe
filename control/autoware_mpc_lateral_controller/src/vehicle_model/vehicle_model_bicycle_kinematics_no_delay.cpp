@@ -60,7 +60,8 @@ void KinematicsBicycleModelNoDelay::calculateReferenceInput(Eigen::MatrixXd & u_
   u_ref(0, 0) = std::atan(m_wheelbase * m_curvature);
 }
 
-MPCTrajectory KinematicsBicycleModelNoDelay::calculatePredictedTrajectoryInWorldCoordinate(
+WithEvents<MPCTrajectory>
+KinematicsBicycleModelNoDelay::calculatePredictedTrajectoryInWorldCoordinate(
   [[maybe_unused]] const Eigen::MatrixXd & a_d, [[maybe_unused]] const Eigen::MatrixXd & b_d,
   [[maybe_unused]] const Eigen::MatrixXd & c_d, [[maybe_unused]] const Eigen::MatrixXd & w_d,
   const Eigen::MatrixXd & x0, const Eigen::MatrixXd & Uex,
@@ -110,7 +111,7 @@ MPCTrajectory KinematicsBicycleModelNoDelay::calculatePredictedTrajectoryInWorld
       t.relative_time.at(i));
   }
 
-  return mpc_predicted_trajectory;
+  return {mpc_predicted_trajectory, {}};
 }
 
 MPCTrajectory KinematicsBicycleModelNoDelay::calculatePredictedTrajectoryInFrenetCoordinate(

@@ -101,13 +101,16 @@ MpcLateralController::MpcLateralController(
   }
 
   /* vehicle model setup */
-  auto vehicle_model_ptr =
+  Events events;
+  auto vehicle_model =
     createVehicleModel(wheelbase, m_mpc->m_steer_lim, m_mpc->m_param.steer_tau, node);
-  m_mpc->setVehicleModel(vehicle_model_ptr);
+  append(events, std::move(vehicle_model.events));
+  m_mpc->setVehicleModel(vehicle_model.value);
 
   /* QP solver setup */
-  auto qpsolver_ptr = createQPSolverInterface(node);
-  m_mpc->setQPSolver(qpsolver_ptr);
+  auto qpsolver = createQPSolverInterface(node);
+  append(events, std::move(qpsolver.events));
+  m_mpc->setQPSolver(qpsolver.value);
 
   /* delay compensation */
   {
@@ -186,8 +189,8 @@ MpcLateralController::MpcLateralController(
 
   m_mpc->initializeSteeringPredictor();
 
-  m_mpc->setLogger(logger_);
   m_mpc->setClock(clock_);
+  writeEvents(events);
 
   setupDiag();
 }
@@ -196,21 +199,22 @@ MpcLateralController::~MpcLateralController()
 {
 }
 
-std::shared_ptr<VehicleModelInterface> MpcLateralController::createVehicleModel(
+WithEvents<std::shared_ptr<VehicleModelInterface>> MpcLateralController::createVehicleModel(
   const double wheelbase, const double steer_lim, const double steer_tau, rclcpp::Node & node)
 {
+  Events events;
   std::shared_ptr<VehicleModelInterface> vehicle_model_ptr;
 
   const std::string vehicle_model_type = node.declare_parameter<std::string>("vehicle_model_type");
 
   if (vehicle_model_type == "kinematics") {
     vehicle_model_ptr = std::make_shared<KinematicsBicycleModel>(wheelbase, steer_lim, steer_tau);
-    return vehicle_model_ptr;
+    return {vehicle_model_ptr, std::move(events)};
   }
 
   if (vehicle_model_type == "kinematics_no_delay") {
     vehicle_model_ptr = std::make_shared<KinematicsBicycleModelNoDelay>(wheelbase, steer_lim);
-    return vehicle_model_ptr;
+    return {vehicle_model_ptr, std::move(events)};
   }
 
   if (vehicle_model_type == "dynamics") {
@@ -224,32 +228,114 @@ std::shared_ptr<VehicleModelInterface> MpcLateralController::createVehicleModel(
     // vehicle_model_ptr is only assigned in ctor, so parameter value have to be passed at init time
     vehicle_model_ptr =
       std::make_shared<DynamicsBicycleModel>(wheelbase, mass_fl, mass_fr, mass_rl, mass_rr, cf, cr);
-    return vehicle_model_ptr;
+    return {vehicle_model_ptr, std::move(events)};
   }
 
-  RCLCPP_ERROR(logger_, "vehicle_model_type is undefined");
-  return vehicle_model_ptr;
+  report(events, EventId::vehicle_model_type_undefined, "vehicle_model_type is undefined");
+  return {vehicle_model_ptr, std::move(events)};
 }
 
-std::shared_ptr<QPSolverInterface> MpcLateralController::createQPSolverInterface(
+WithEvents<std::shared_ptr<QPSolverInterface>> MpcLateralController::createQPSolverInterface(
   rclcpp::Node & node)
 {
+  Events events;
   std::shared_ptr<QPSolverInterface> qpsolver_ptr;
 
   const std::string qp_solver_type = node.declare_parameter<std::string>("qp_solver_type");
 
   if (qp_solver_type == "unconstraint_fast") {
     qpsolver_ptr = std::make_shared<QPSolverEigenLeastSquareLLT>();
-    return qpsolver_ptr;
+    return {qpsolver_ptr, std::move(events)};
   }
 
   if (qp_solver_type == "osqp") {
     qpsolver_ptr = std::make_shared<QPSolverOSQP>();
-    return qpsolver_ptr;
+    return {qpsolver_ptr, std::move(events)};
   }
 
-  RCLCPP_ERROR(logger_, "qp_solver_type is undefined");
-  return qpsolver_ptr;
+  report(events, EventId::qp_solver_type_undefined, "qp_solver_type is undefined");
+  return {qpsolver_ptr, std::move(events)};
+}
+
+void MpcLateralController::writeEvents(const Events & events) const
+{
+  // Each case stands in its own place in the code, so each keeps the waiting time of its
+  // own message. The text comes from where the event was met.
+  for (const auto & event : events) {
+    switch (event.id) {
+      case EventId::spline_resample_failed:
+        RCLCPP_WARN_THROTTLE(logger_, *clock_, 3000, "%s", event.text.c_str());
+        break;
+      case EventId::path_filter_failed:
+        RCLCPP_DEBUG(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::resampled_trajectory_empty:
+        RCLCPP_DEBUG(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::state_vehicle_model_undefined:
+        RCLCPP_ERROR(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::delay_compensation_resample_failed:
+        RCLCPP_ERROR(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::qp_solver_failed:
+        RCLCPP_WARN(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::qp_solver_warning:
+        RCLCPP_WARN_THROTTLE(logger_, *clock_, 1000, "%s", event.text.c_str());
+        break;
+      case EventId::vehicle_model_type_undefined:
+        RCLCPP_ERROR(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::qp_solver_type_undefined:
+        RCLCPP_ERROR(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::mpc_failed:
+        RCLCPP_ERROR(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::stopped_state_detected:
+        RCLCPP_DEBUG_THROTTLE(logger_, *clock_, 5000, "%s", event.text.c_str());
+        break;
+      case EventId::mpc_not_solved:
+        RCLCPP_DEBUG_THROTTLE(logger_, *clock_, 5000, "%s", event.text.c_str());
+        break;
+      case EventId::trajectory_shape_changed:
+        RCLCPP_DEBUG(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::no_vehicle_model:
+        RCLCPP_INFO_THROTTLE(logger_, *clock_, 5000, "%s", event.text.c_str());
+        break;
+      case EventId::no_qp_solver:
+        RCLCPP_INFO_THROTTLE(logger_, *clock_, 5000, "%s", event.text.c_str());
+        break;
+      case EventId::reference_trajectory_empty:
+        RCLCPP_INFO_THROTTLE(logger_, *clock_, 5000, "%s", event.text.c_str());
+        break;
+      case EventId::trajectory_too_few_points:
+        RCLCPP_DEBUG(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::trajectory_invalid:
+        RCLCPP_ERROR(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::steering_not_converged:
+        RCLCPP_DEBUG_THROTTLE(logger_, *clock_, 5000, "%s", event.text.c_str());
+        break;
+      case EventId::nearest_pose_interp_failed:
+      case EventId::temporal_nearest_pose_failed:
+      case EventId::trajectory_too_short:
+        // These reach the operator as the reason of MpcResult, not as a message of their own.
+        break;
+      case EventId::trajectory_size_inconsistent:
+        RCLCPP_ERROR(logger_, "%s", event.text.c_str());
+        break;
+      case EventId::nearest_pose_trajectory_empty:
+        RCLCPP_WARN_THROTTLE(logger_, *clock_, 5000, "%s", event.text.c_str());
+        break;
+      case EventId::world_coordinate_prediction_unsupported:
+        RCLCPP_ERROR(logger_, "%s", event.text.c_str());
+        break;
+    }
+  }
 }
 
 void MpcLateralController::setStatus(diagnostic_updater::DiagnosticStatusWrapper & stat)
@@ -274,7 +360,7 @@ trajectory_follower::LateralOutput MpcLateralController::run(
   const builtin_interfaces::msg::Time stamp = clock_->now();
 
   // set input data
-  setTrajectory(input_data.current_trajectory, input_data.current_odometry);
+  Events events = setTrajectory(input_data.current_trajectory, input_data.current_odometry);
 
   m_current_kinematic_state = input_data.current_odometry;
   m_current_steering = input_data.current_steering;
@@ -310,7 +396,7 @@ trajectory_follower::LateralOutput MpcLateralController::run(
   if (
     (m_mpc_solved_status.result == true && mpc_solved_status.result == false) ||
     (!mpc_solved_status.result && mpc_solved_status.reason != m_mpc_solved_status.reason)) {
-    RCLCPP_ERROR(logger_, "MPC failed due to %s", mpc_solved_status.reason.c_str());
+    report(events, EventId::mpc_failed, mpc_solved_status.reason);
   }
   m_mpc_solved_status = mpc_solved_status;  // for diagnostic updater
 
@@ -332,7 +418,7 @@ trajectory_follower::LateralOutput MpcLateralController::run(
   publishDebugValues(mpc_solved_status.diagnostic);
 
   const auto createLateralOutput =
-    [this, &stamp](
+    [this, &stamp, &events](
       const auto & cmd, const bool is_mpc_solved,
       const auto & cmd_horizon) -> trajectory_follower::LateralOutput {
     trajectory_follower::LateralOutput output;
@@ -344,14 +430,18 @@ trajectory_follower::LateralOutput MpcLateralController::run(
     // 2. The mpc should be converged.
     // 3. The steer angle should be converged.
     output.sync_data.is_steer_converged =
-      is_mpc_solved && isMpcConverged() && isSteerConverged(cmd);
+      is_mpc_solved && isMpcConverged() && isSteerConverged(cmd).value;
 
     return output;
   };
 
-  if (isStoppedState()) {
+  auto stopped = isStoppedState();
+  append(events, std::move(stopped.events));
+  if (stopped.value) {
     // Reset input buffer
-    debug_throttle("Stopped state detected, use previous control command");
+    report(
+      events, EventId::stopped_state_detected,
+      "Stopped state detected, use previous control command");
     for (auto & value : m_mpc->m_input_buffer) {
       value = m_ctrl_cmd_prev.steering_tire_angle;
     }
@@ -361,7 +451,7 @@ trajectory_follower::LateralOutput MpcLateralController::run(
   }
 
   if (!mpc_solved_status.result) {
-    debug_throttle("MPC is not solved, use stop control command");
+    report(events, EventId::mpc_not_solved, "MPC is not solved, use stop control command");
     ctrl_cmd = getStopControlCommand();
   }
 
@@ -370,60 +460,63 @@ trajectory_follower::LateralOutput MpcLateralController::run(
     ctrl_cmd, mpc_solved_status.result, mpc_solved_status.ctrl_cmd_horizon);
 }
 
-bool MpcLateralController::isSteerConverged(const Lateral & cmd) const
+WithEvents<bool> MpcLateralController::isSteerConverged(const Lateral & cmd) const
 {
+  Events events;
   // wait for a while to propagate the trajectory shape to the output command when the trajectory
   // shape is changed.
   if (!m_has_received_first_trajectory || isTrajectoryShapeChanged()) {
-    RCLCPP_DEBUG(logger_, "trajectory shaped is changed");
-    return false;
+    report(events, EventId::trajectory_shape_changed, "trajectory shaped is changed");
+    return {false, std::move(events)};
   }
 
   const bool is_converged =
     std::abs(cmd.steering_tire_angle - m_current_steering.steering_tire_angle) <
     static_cast<float>(m_converged_steer_rad);
 
-  return is_converged;
+  return {is_converged, std::move(events)};
 }
 
 bool MpcLateralController::isReady(const trajectory_follower::InputData & input_data)
 {
-  setTrajectory(input_data.current_trajectory, input_data.current_odometry);
+  Events events = setTrajectory(input_data.current_trajectory, input_data.current_odometry);
   m_current_kinematic_state = input_data.current_odometry;
   m_current_steering = input_data.current_steering;
 
   if (!m_mpc->hasVehicleModel()) {
-    info_throttle("MPC does not have a vehicle model");
+    report(events, EventId::no_vehicle_model, "MPC does not have a vehicle model");
     return false;
   }
   if (!m_mpc->hasQPSolver()) {
-    info_throttle("MPC does not have a QP solver");
+    report(events, EventId::no_qp_solver, "MPC does not have a QP solver");
     return false;
   }
   if (m_mpc->m_reference_trajectory.empty()) {
-    info_throttle("trajectory size is zero.");
+    report(events, EventId::reference_trajectory_empty, "trajectory size is zero.");
     return false;
   }
 
   return true;
 }
 
-void MpcLateralController::setTrajectory(
+Events MpcLateralController::setTrajectory(
   const Trajectory & msg, const Odometry & current_kinematics)
 {
+  Events events;
   m_current_trajectory = msg;
 
   if (msg.points.size() < 3) {
-    RCLCPP_DEBUG(logger_, "received path size is < 3, not enough.");
-    return;
+    report(events, EventId::trajectory_too_few_points, "received path size is < 3, not enough.");
+    return events;
   }
 
   if (!isValidTrajectory(msg)) {
-    RCLCPP_ERROR(logger_, "Trajectory is invalid!! stop computing.");
-    return;
+    report(events, EventId::trajectory_invalid, "Trajectory is invalid!! stop computing.");
+    return events;
   }
 
-  m_mpc->setReferenceTrajectory(msg, m_trajectory_filtering_param, current_kinematics);
+  append(
+    events, m_mpc->setReferenceTrajectory(msg, m_trajectory_filtering_param, current_kinematics));
 
   // update trajectory buffer to check the trajectory shape change.
   m_trajectory_buffer.push_back(m_current_trajectory);
@@ -440,6 +533,7 @@ void MpcLateralController::setTrajectory(
     }
     m_trajectory_buffer.pop_front();
   }
+  return events;
 }
 
 Lateral MpcLateralController::getStopControlCommand() const
@@ -458,19 +552,22 @@ Lateral MpcLateralController::getInitialControlCommand() const
   return cmd;
 }
 
-bool MpcLateralController::isStoppedState() const
+WithEvents<bool> MpcLateralController::isStoppedState() const
 {
+  Events events;
   const double current_vel = m_current_kinematic_state.twist.twist.linear.x;
   // If the nearest index is not found, return false
   if (
     m_current_trajectory.points.empty() || std::fabs(current_vel) > m_stop_state_entry_ego_speed) {
-    return false;
+    return {false, std::move(events)};
   }
 
   const auto latest_published_cmd = m_ctrl_cmd_prev;  // use prev_cmd as a latest published command
-  if (m_keep_steer_control_until_converged && !isSteerConverged(latest_published_cmd)) {
-    debug_throttle("steering is not converged.");
-    return false;  // not stopState: keep control
+  auto converged = isSteerConverged(latest_published_cmd);
+  append(events, std::move(converged.events));
+  if (m_keep_steer_control_until_converged && !converged.value) {
+    report(events, EventId::steering_not_converged, "steering is not converged.");
+    return {false, std::move(events)};  // not stopState: keep control
   }
 
   // Note: This function used to take into account the distance to the stop line
@@ -497,7 +594,7 @@ bool MpcLateralController::isStoppedState() const
     return min_vel;
   });
 
-  return std::fabs(target_vel) < m_stop_state_entry_target_speed;
+  return {std::fabs(target_vel) < m_stop_state_entry_target_speed, std::move(events)};
 }
 
 Lateral MpcLateralController::createCtrlCmdMsg(
