@@ -30,6 +30,18 @@ enum class MessageId {
   qp_solver_warning,
   trajectory_size_inconsistent,
   world_coordinate_prediction_unsupported,
+  vehicle_model_type_undefined,
+  qp_solver_type_undefined,
+  mpc_failed,
+  stopped_state_detected,
+  mpc_not_solved,
+  trajectory_shape_changed,
+  no_vehicle_model,
+  no_qp_solver,
+  reference_trajectory_empty,
+  trajectory_too_few_points,
+  trajectory_invalid,
+  steering_not_converged,
 };
 
 struct Message

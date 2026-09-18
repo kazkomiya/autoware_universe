@@ -27,6 +27,7 @@ if(BUILD_TESTING)
   set(TEST_LAT_SOURCES
     test/test_mpc.cpp
     test/test_mpc_lateral_controller.cpp
+    test/test_mpc_lateral_controller_core.cpp
     test/test_mpc_utils.cpp
     test/test_steering_predictor.cpp
     test/test_lowpass_filter.cpp
