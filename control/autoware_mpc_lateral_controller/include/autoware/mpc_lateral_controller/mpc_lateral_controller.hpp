@@ -54,7 +54,7 @@ using geometry_msgs::msg::PoseStamped;
 using nav_msgs::msg::Odometry;
 using trajectory_follower::LateralHorizon;
 
-class MpcLateralControllerNode
+class MpcLateralController
 {
 public:
 private:

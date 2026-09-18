@@ -38,7 +38,7 @@
 namespace autoware::motion::control::mpc_lateral_controller
 {
 
-MpcLateralControllerNode::MpcLateralControllerNode(
+MpcLateralController::MpcLateralController(
   rclcpp::Node & node, std::shared_ptr<diagnostic_updater::Updater> diag_updater)
 : clock_(node.get_clock()), logger_(node.get_logger().get_child("lateral_controller"))
 {
@@ -182,18 +182,18 @@ MpcLateralControllerNode::MpcLateralControllerNode(
   /* get parameter updates */
   using std::placeholders::_1;
   m_set_param_res = node.add_on_set_parameters_callback(
-    std::bind(&MpcLateralControllerNode::paramCallback, this, _1));
+    std::bind(&MpcLateralController::paramCallback, this, _1));
 
   m_mpc->initializeSteeringPredictor();
 
   setupDiag();
 }
 
-MpcLateralControllerNode::~MpcLateralControllerNode()
+MpcLateralController::~MpcLateralController()
 {
 }
 
-std::shared_ptr<VehicleModelInterface> MpcLateralControllerNode::createVehicleModel(
+std::shared_ptr<VehicleModelInterface> MpcLateralController::createVehicleModel(
   const double wheelbase, const double steer_lim, const double steer_tau, rclcpp::Node & node)
 {
   std::shared_ptr<VehicleModelInterface> vehicle_model_ptr;
@@ -228,7 +228,7 @@ std::shared_ptr<VehicleModelInterface> MpcLateralControllerNode::createVehicleMo
   return vehicle_model_ptr;
 }
 
-std::shared_ptr<QPSolverInterface> MpcLateralControllerNode::createQPSolverInterface(
+std::shared_ptr<QPSolverInterface> MpcLateralController::createQPSolverInterface(
   rclcpp::Node & node)
 {
   std::shared_ptr<QPSolverInterface> qpsolver_ptr;
@@ -252,7 +252,7 @@ std::shared_ptr<QPSolverInterface> MpcLateralControllerNode::createQPSolverInter
 
 
 
-trajectory_follower::LateralOutput MpcLateralControllerNode::run(
+trajectory_follower::LateralOutput MpcLateralController::run(
   trajectory_follower::InputData const & input_data)
 {
   // Timestamp of this control cycle, shared by every message this call publishes.
@@ -356,7 +356,7 @@ trajectory_follower::LateralOutput MpcLateralControllerNode::run(
     ctrl_cmd, mpc_solved_status.result, mpc_solved_status.ctrl_cmd_horizon);
 }
 
-bool MpcLateralControllerNode::isSteerConverged(const Lateral & cmd) const
+bool MpcLateralController::isSteerConverged(const Lateral & cmd) const
 {
   // wait for a while to propagate the trajectory shape to the output command when the trajectory
   // shape is changed.
@@ -372,7 +372,7 @@ bool MpcLateralControllerNode::isSteerConverged(const Lateral & cmd) const
   return is_converged;
 }
 
-bool MpcLateralControllerNode::isReady(const trajectory_follower::InputData & input_data)
+bool MpcLateralController::isReady(const trajectory_follower::InputData & input_data)
 {
   setTrajectory(input_data.current_trajectory, input_data.current_odometry);
   m_current_kinematic_state = input_data.current_odometry;
@@ -394,7 +394,7 @@ bool MpcLateralControllerNode::isReady(const trajectory_follower::InputData & in
   return true;
 }
 
-void MpcLateralControllerNode::setTrajectory(
+void MpcLateralController::setTrajectory(
   const Trajectory & msg, const Odometry & current_kinematics)
 {
   m_current_trajectory = msg;
@@ -429,7 +429,7 @@ void MpcLateralControllerNode::setTrajectory(
   }
 }
 
-Lateral MpcLateralControllerNode::getStopControlCommand() const
+Lateral MpcLateralController::getStopControlCommand() const
 {
   Lateral cmd;
   cmd.steering_tire_angle = static_cast<decltype(cmd.steering_tire_angle)>(m_steer_cmd_prev);
@@ -437,7 +437,7 @@ Lateral MpcLateralControllerNode::getStopControlCommand() const
   return cmd;
 }
 
-Lateral MpcLateralControllerNode::getInitialControlCommand() const
+Lateral MpcLateralController::getInitialControlCommand() const
 {
   Lateral cmd;
   cmd.steering_tire_angle = m_current_steering.steering_tire_angle;
@@ -445,7 +445,7 @@ Lateral MpcLateralControllerNode::getInitialControlCommand() const
   return cmd;
 }
 
-bool MpcLateralControllerNode::isStoppedState() const
+bool MpcLateralController::isStoppedState() const
 {
   const double current_vel = m_current_kinematic_state.twist.twist.linear.x;
   // If the nearest index is not found, return false
@@ -487,7 +487,7 @@ bool MpcLateralControllerNode::isStoppedState() const
   return std::fabs(target_vel) < m_stop_state_entry_target_speed;
 }
 
-Lateral MpcLateralControllerNode::createCtrlCmdMsg(
+Lateral MpcLateralController::createCtrlCmdMsg(
   const Lateral & ctrl_cmd, const builtin_interfaces::msg::Time & stamp)
 {
   auto out = ctrl_cmd;
@@ -496,7 +496,7 @@ Lateral MpcLateralControllerNode::createCtrlCmdMsg(
   return out;
 }
 
-LateralHorizon MpcLateralControllerNode::createCtrlCmdHorizonMsg(
+LateralHorizon MpcLateralController::createCtrlCmdHorizonMsg(
   const LateralHorizon & ctrl_cmd_horizon, const builtin_interfaces::msg::Time & stamp) const
 {
   auto out = ctrl_cmd_horizon;
@@ -509,7 +509,7 @@ LateralHorizon MpcLateralControllerNode::createCtrlCmdHorizonMsg(
 
 
 
-void MpcLateralControllerNode::setSteeringToHistory(const Lateral & steering)
+void MpcLateralController::setSteeringToHistory(const Lateral & steering)
 {
   const auto time = clock_->now();
   if (m_mpc_steering_history.empty()) {
@@ -536,7 +536,7 @@ void MpcLateralControllerNode::setSteeringToHistory(const Lateral & steering)
   }
 }
 
-bool MpcLateralControllerNode::isMpcConverged()
+bool MpcLateralController::isMpcConverged()
 {
   // If the number of variable below the 2, there is no enough data so MPC is not converged.
   if (m_mpc_steering_history.size() < 2) {
@@ -565,7 +565,7 @@ bool MpcLateralControllerNode::isMpcConverged()
 
 
 
-bool MpcLateralControllerNode::isTrajectoryShapeChanged() const
+bool MpcLateralController::isTrajectoryShapeChanged() const
 {
   // TODO(Horibe): update implementation to check trajectory shape around ego vehicle.
   // Now temporally check the goal position.
@@ -579,7 +579,7 @@ bool MpcLateralControllerNode::isTrajectoryShapeChanged() const
   return false;
 }
 
-bool MpcLateralControllerNode::isValidTrajectory(const Trajectory & traj) const
+bool MpcLateralController::isValidTrajectory(const Trajectory & traj) const
 {
   double prev_time_from_start = -std::numeric_limits<double>::infinity();
   for (const auto & p : traj.points) {
