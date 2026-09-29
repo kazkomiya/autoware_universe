@@ -190,7 +190,6 @@ MpcLateralController::MpcLateralController(
 
   m_mpc->initializeSteeringPredictor();
 
-  m_mpc->setClock(clock_);
   m_mpc->setReporter(reporter_);
 
   setupDiag();
