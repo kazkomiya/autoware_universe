@@ -57,34 +57,11 @@ using trajectory_follower::LateralHorizon;
 class MpcLateralControllerNode : public trajectory_follower::LateralControllerBase
 {
 public:
-  /// \param node Reference to the node used only for the component and parameter initialization.
-  explicit MpcLateralControllerNode(
-    rclcpp::Node & node, std::shared_ptr<diagnostic_updater::Updater> diag_updater);
-  virtual ~MpcLateralControllerNode();
-
-  void set_steering_offset(double offset) override { m_steering_offset_ = offset; }
-
 private:
-  rclcpp::Clock::SharedPtr clock_;
-  rclcpp::Logger logger_;
-  LoggingReporter reporter_;
-
-  rclcpp::Publisher<Trajectory>::SharedPtr m_pub_predicted_traj;
-  rclcpp::Publisher<Trajectory>::SharedPtr m_pub_predicted_traj_frenet;
-  rclcpp::Publisher<Trajectory>::SharedPtr m_pub_resampled_reference_traj;
-  rclcpp::Publisher<PoseStamped>::SharedPtr m_pub_nearest_pose;
-  rclcpp::Publisher<Trajectory>::SharedPtr m_pub_nearest_segment_traj;
-  rclcpp::Publisher<Float32MultiArrayStamped>::SharedPtr m_pub_nearest_info;
-  rclcpp::Publisher<Float32MultiArrayStamped>::SharedPtr m_pub_debug_values;
-  rclcpp::Publisher<Float32Stamped>::SharedPtr m_pub_steer_offset;
-
   std::shared_ptr<Butterworth2dFilter> lpf_steer_offset_;
   double m_steering_offset_{0.0};
   double m_steering_offset_target_{0.0};
   double m_steering_offset_filtered_{0.0};
-
-  std::shared_ptr<diagnostic_updater::Updater>
-    diag_updater_{};  // Diagnostic updater for publishing diagnostic data.
 
   //!< @brief parameters for path smoothing
   TrajectoryFilteringParam m_trajectory_filtering_param;
@@ -115,10 +92,6 @@ private:
 
   // trajectory buffer for detecting new trajectory
   std::deque<Trajectory> m_trajectory_buffer;
-
-  void setStatus(diagnostic_updater::DiagnosticStatusWrapper & stat);
-
-  void setupDiag();
 
   std::unique_ptr<MPC> m_mpc;  // MPC object for trajectory following.
 
@@ -189,21 +162,6 @@ private:
   std::shared_ptr<QPSolverInterface> createQPSolverInterface(rclcpp::Node & node);
 
   /**
-   * @brief Check if all necessary data is received and ready to run the control.
-   * @param input_data Input data required for control calculation.
-   * @return True if the data is ready, false otherwise.
-   */
-  bool isReady(const trajectory_follower::InputData & input_data) override;
-
-  /**
-   * @brief Compute the control command for path following with a constant control period.
-   * @param input_data Input data required for control calculation.
-   * @return Lateral output control command.
-   */
-  trajectory_follower::LateralOutput run(
-    trajectory_follower::InputData const & input_data) override;
-
-  /**
    * @brief Set the current trajectory using the received message.
    * @param msg Received trajectory message.
    */
@@ -231,25 +189,6 @@ private:
    */
   [[nodiscard]] LateralHorizon createCtrlCmdHorizonMsg(
     const LateralHorizon & ctrl_cmd_horizon, const builtin_interfaces::msg::Time & stamp) const;
-
-  /**
-   * @brief Publish the predicted future trajectory.
-   * @param predicted_traj Predicted future trajectory to be published.
-   */
-  void publishPredictedTraj(Trajectory & predicted_traj) const;
-
-  /**
-   * @brief Publish the MPC debug topic messages (predicted trajectory in Frenet coordinate,
-   * resampled reference trajectory, nearest pose, nearest segment trajectory, nearest info).
-   * @param debug_msgs MPC debug topic messages to be published.
-   */
-  void publishDebugMessages(std::optional<MpcDebugTopicMessage> & debug_msgs) const;
-
-  /**
-   * @brief Publish diagnostic message.
-   * @param diagnostic Diagnostic message to be published.
-   */
-  void publishDebugValues(Float32MultiArrayStamped & diagnostic) const;
 
   /**
    * @brief Get the stop control command.
@@ -288,22 +227,6 @@ private:
    * @return True if the steering control is converged and stable, false otherwise.
    */
   [[nodiscard]] bool isSteerConverged(const Lateral & cmd) const;
-
-  rclcpp::Node::OnSetParametersCallbackHandle::SharedPtr m_set_param_res;
-
-  /**
-   * @brief Declare MPC parameters as ROS parameters to allow tuning on the fly.
-   * @param node Reference to the node.
-   */
-  void declareMPCparameters(rclcpp::Node & node);
-
-  /**
-   * @brief Callback function called when parameters are changed outside of the node.
-   * @param parameters Vector of changed parameters.
-   * @return Result of the parameter callback.
-   */
-  rcl_interfaces::msg::SetParametersResult paramCallback(
-    const std::vector<rclcpp::Parameter> & parameters);
 };
 }  // namespace autoware::motion::control::mpc_lateral_controller
 
