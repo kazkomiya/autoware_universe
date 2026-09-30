@@ -9,8 +9,8 @@ find_package(fmt REQUIRED)
 set(MPC_LAT_CON_LIB ${PROJECT_NAME}_lib)
 ament_auto_add_library(${MPC_LAT_CON_LIB} SHARED
   src/mpc_lateral_controller.cpp
-  src/mpc_lateral_controller_node.cpp
   src/ros_log_writer.cpp
+  src/mpc_lateral_controller_node.cpp
   src/lowpass_filter.cpp
   src/steering_predictor.cpp
   src/mpc.cpp
@@ -28,6 +28,7 @@ if(BUILD_TESTING)
   set(TEST_LAT_SOURCES
     test/test_mpc.cpp
     test/test_mpc_lateral_controller.cpp
+    test/test_mpc_lateral_controller_core.cpp
     test/test_mpc_utils.cpp
     test/test_steering_predictor.cpp
     test/test_lowpass_filter.cpp
