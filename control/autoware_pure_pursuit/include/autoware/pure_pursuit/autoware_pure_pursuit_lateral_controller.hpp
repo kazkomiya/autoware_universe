@@ -33,9 +33,7 @@
 #include "autoware/pure_pursuit/autoware_pure_pursuit.hpp"
 #include "autoware/pure_pursuit/autoware_pure_pursuit_viz.hpp"
 #include "autoware/trajectory_follower_base/lateral_controller_base.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "tf2_ros/buffer.h"
-#include "tf2_ros/transform_listener.h"
+#include "rclcpp/time.hpp"
 
 #include <autoware/motion_utils/resample/resample.hpp>
 #include <autoware/motion_utils/trajectory/conversion.hpp>
@@ -48,13 +46,12 @@
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 
-#include <boost/optional.hpp>  // To be replaced by std::optional in C++17
-
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 using autoware::motion::control::trajectory_follower::InputData;
-using autoware::motion::control::trajectory_follower::LateralControllerBase;
 using autoware::motion::control::trajectory_follower::LateralOutput;
 using autoware_control_msgs::msg::Lateral;
 using autoware_planning_msgs::msg::Trajectory;
@@ -69,7 +66,7 @@ struct PpOutput
   double velocity;
 };
 
-struct Param
+struct PurePursuitLateralControllerConfig
 {
   // Global Parameters
   double wheel_base;
@@ -97,58 +94,58 @@ struct DebugData
   geometry_msgs::msg::Point next_target;
 };
 
-class PurePursuitLateralController : public LateralControllerBase
+/// What one cycle of PurePursuitLateralController returns. The node publishes the messages and
+/// writes the log lines for the events. An event that happens more than once in a cycle is kept
+/// once, with the values of the first time.
+struct PurePursuitLateralControllerResult
+{
+  LateralOutput output;
+  std::optional<autoware_internal_debug_msgs::msg::Float32MultiArrayStamped> lookahead_debug_values;
+  std::optional<Trajectory> predicted_trajectory;
+  bool path_too_short_to_smooth{false};
+  bool path_too_short{false};
+  bool closest_waypoint_not_found{false};
+  std::optional<std::string> curvature_error;
+  std::optional<PurePursuit::Failure> pure_pursuit_failure;
+  bool control_command_failed{false};
+  bool prediction_failed_at_first_point{false};
+  bool prediction_failed_at_later_point{false};
+};
+
+class PurePursuitLateralController
 {
 public:
-  /// \param node Reference to the node used only for the component and parameter initialization.
-  explicit PurePursuitLateralController(rclcpp::Node & node);
+  explicit PurePursuitLateralController(const PurePursuitLateralControllerConfig & config);
+
+  /// Compute the command of one control cycle.
+  /// \param stamp Time of the cycle. The command and the lookahead debug values have this stamp.
+  PurePursuitLateralControllerResult run(const InputData & input_data, const rclcpp::Time & stamp);
 
 private:
-  rclcpp::Clock::SharedPtr clock_;
-  rclcpp::Logger logger_;
   std::vector<TrajectoryPoint> output_tp_array_;
   autoware_planning_msgs::msg::Trajectory::SharedPtr trajectory_resampled_;
   autoware_planning_msgs::msg::Trajectory trajectory_;
   nav_msgs::msg::Odometry current_odometry_;
   autoware_vehicle_msgs::msg::SteeringReport current_steering_;
-  boost::optional<Lateral> prev_cmd_;
-
-  // Debug Publisher
-  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_debug_marker_;
-  rclcpp::Publisher<autoware_internal_debug_msgs::msg::Float32MultiArrayStamped>::SharedPtr
-    pub_debug_values_;
-  // Predicted Trajectory publish
-  rclcpp::Publisher<autoware_planning_msgs::msg::Trajectory>::SharedPtr pub_predicted_trajectory_;
-
-  void onTrajectory(const autoware_planning_msgs::msg::Trajectory::ConstSharedPtr msg);
-
-  void onCurrentOdometry(const nav_msgs::msg::Odometry::ConstSharedPtr msg);
+  std::optional<Lateral> prev_cmd_;
 
   void setResampledTrajectory();
 
-  // TF
-  tf2_ros::Buffer tf_buffer_;
-  tf2_ros::TransformListener tf_listener_;
   geometry_msgs::msg::Pose current_pose_;
 
   void publishDebugMarker() const;
 
-  /**
-   * @brief compute control command for path follow with a constant control period
-   */
-  bool isReady([[maybe_unused]] const InputData & input_data) override;
-  LateralOutput run(const InputData & input_data) override;
-
-  Lateral generateCtrlCmdMsg(const double target_curvature);
+  Lateral generateCtrlCmdMsg(const double target_curvature, const rclcpp::Time & stamp);
 
   // Parameter
-  Param param_{};
+  PurePursuitLateralControllerConfig param_{};
 
   // Algorithm
   std::unique_ptr<PurePursuit> pure_pursuit_;
 
-  boost::optional<PpOutput> calcTargetCurvature(
-    bool is_control_output, geometry_msgs::msg::Pose pose);
+  std::optional<PpOutput> calcTargetCurvature(
+    bool is_control_output, geometry_msgs::msg::Pose pose, const rclcpp::Time & stamp,
+    PurePursuitLateralControllerResult & result);
 
   /**
    * @brief It takes current pose, control command, and delta distance. Then it calculates next pose
@@ -157,19 +154,23 @@ private:
 
   TrajectoryPoint calcNextPose(const double ds, TrajectoryPoint & point, Lateral cmd) const;
 
-  boost::optional<Trajectory> generatePredictedTrajectory();
+  std::optional<Trajectory> generatePredictedTrajectory(
+    const rclcpp::Time & stamp, PurePursuitLateralControllerResult & result);
 
-  Lateral generateOutputControlCmd();
+  Lateral generateOutputControlCmd(
+    const rclcpp::Time & stamp, PurePursuitLateralControllerResult & result);
 
   bool calcIsSteerConverged(const Lateral & cmd);
 
   double calcLookaheadDistance(
     const double lateral_error, const double curvature, const double velocity, const double min_ld,
-    const bool is_control_cmd);
+    const bool is_control_cmd, const rclcpp::Time & stamp,
+    PurePursuitLateralControllerResult & result);
 
-  double calcCurvature(const size_t closest_idx);
+  double calcCurvature(const size_t closest_idx, PurePursuitLateralControllerResult & result);
 
-  void averageFilterTrajectory(autoware_planning_msgs::msg::Trajectory & u);
+  void averageFilterTrajectory(
+    autoware_planning_msgs::msg::Trajectory & u, PurePursuitLateralControllerResult & result);
 
   // Debug
   mutable DebugData debug_data_;
